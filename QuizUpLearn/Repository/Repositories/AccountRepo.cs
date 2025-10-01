@@ -125,6 +125,18 @@ namespace Repository.Repositories
             await _context.SaveChangesAsync();
             return existing;
         }
+
+        public async Task<bool> UpdatePasswordByEmailAsync(string email, string newPasswordHash)
+        {
+            var normalized = email.Trim().ToLowerInvariant();
+            var account = await _context.Accounts.FirstOrDefaultAsync(a => a.Email == normalized);
+            if (account == null) return false;
+            account.PasswordHash = newPasswordHash;
+            account.UpdatedAt = DateTime.Now;
+            _context.Accounts.Update(account);
+            await _context.SaveChangesAsync();
+            return true;
+        }
     }
 }
 

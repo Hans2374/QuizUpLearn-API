@@ -76,6 +76,7 @@ namespace QuizUpLearn.API.DI
         {
             services.AddScoped<IRoleRepo, RoleRepo>();
             services.AddScoped<IAccountRepo, AccountRepo>();
+            services.AddScoped<IOtpVerificationRepo, OtpVerificationRepo>();
         }
 
         public static void AddAutoMapper(this IServiceCollection services)
