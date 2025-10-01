@@ -33,7 +33,9 @@ namespace BusinessLogic.Services
             {
                 Account = _mapper.Map<ResponseAccountDto>(account),
                 AccessToken = string.Empty,
-                ExpiresAt = DateTime.Now
+                ExpiresAt = DateTime.Now,
+                RefreshToken = string.Empty,
+                RefreshExpiresAt = DateTime.Now
             };
         }
 

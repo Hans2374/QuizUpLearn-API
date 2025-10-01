@@ -101,7 +101,7 @@ namespace QuizUpLearn.API.Controllers
             };
 
             var access = GenerateJwtToken(account);
-            var refresh = GenerateRefreshToken();
+            var refresh = GenerateRefreshToken(account);
 
             return Ok(new LoginResponseDto
             {
