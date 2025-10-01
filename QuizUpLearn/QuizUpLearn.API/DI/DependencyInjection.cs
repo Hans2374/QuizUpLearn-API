@@ -20,6 +20,8 @@ namespace QuizUpLearn.API.DI
             services.AddRepository();
             services.AddAutoMapper();
             services.AddServices();
+            services.AddHttpClient();
+            services.AddHttpClient<IMailerSendService, MailerSendService>();
 
         }
         /// <summary>
@@ -90,6 +92,7 @@ namespace QuizUpLearn.API.DI
             services.AddScoped<IAccountService, AccountService>();
             services.AddScoped<IIdentityService, IdentityService>();
             services.AddScoped<IUploadService, UploadService>();
+            services.AddScoped<IMailerSendService, MailerSendService>();
         }
     }
 }

@@ -1,0 +1,40 @@
+using BusinessLogic.Interfaces;
+using Microsoft.AspNetCore.Mvc;
+using Repository.Models;
+
+namespace QuizUpLearn.API.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class MailController : ControllerBase
+    {
+        private readonly IMailerSendService _mailerSendService;
+        private readonly IConfiguration _configuration;
+
+        public MailController(IMailerSendService mailerSendService, IConfiguration configuration)
+        {
+            _mailerSendService = mailerSendService;
+            _configuration = configuration;
+        }
+
+        [HttpPost("send")]
+        public async Task<IActionResult> Send()
+        {
+            var fromEmail = _configuration["MailerSend:FromEmail"];
+            var fromName = _configuration["MailerSend:FromName"];
+
+            var email = new MailerSendEmail
+            {
+                From = new MailerSendRecipient { Name = fromName, Email = fromEmail! },
+                Subject = "Xin chào từ MailerSend 🚀",
+                Text = "Đây là email text",
+                Html = "<h1>Hello 👋</h1><p>This is HTML content</p>"
+            };
+            email.To.Add(new MailerSendRecipient { Name = "User One", Email = "lehoangminh20041108@gmail.com" });
+
+            var result = await _mailerSendService.SendEmailAsync(email);
+            return Ok(result);
+        }
+    }
+}
+
