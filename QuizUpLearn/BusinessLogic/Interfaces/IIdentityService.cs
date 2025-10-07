@@ -6,6 +6,9 @@ namespace BusinessLogic.Interfaces
     {
         Task<ResponseAccountDto> RegisterAsync(RegisterRequestDto dto);
         Task<LoginResponseDto?> LoginAsync(LoginRequestDto dto);
+        Task<bool> InitiateResetPasswordAsync(ResetPasswordInitiateRequestDto dto);
+        Task<bool> VerifyResetPasswordOtpAsync(ResetPasswordVerifyRequestDto dto);
+        Task<bool> ConfirmResetPasswordAsync(ResetPasswordConfirmRequestDto dto);
     }
 }
 

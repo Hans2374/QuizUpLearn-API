@@ -44,6 +44,28 @@ namespace QuizUpLearn.API.Controllers
             return Ok(login);
         }
 
+        [HttpPost("reset-password/initiate")]
+        public async Task<IActionResult> InitiateResetPassword([FromBody] ResetPasswordInitiateRequestDto dto)
+        {
+            var ok = await _identityService.InitiateResetPasswordAsync(dto);
+            return Ok(new { success = ok });
+        }
+
+        [HttpPost("reset-password/verify")]
+        public async Task<IActionResult> VerifyResetPassword([FromBody] ResetPasswordVerifyRequestDto dto)
+        {
+            var ok = await _identityService.VerifyResetPasswordOtpAsync(dto);
+            return Ok(new { isValid = ok });
+        }
+
+        [HttpPost("reset-password/confirm")]
+        public async Task<IActionResult> ConfirmResetPassword([FromBody] ResetPasswordConfirmRequestDto dto)
+        {
+            var ok = await _identityService.ConfirmResetPasswordAsync(dto);
+            if (!ok) return BadRequest("OTP không hợp lệ hoặc đã hết hạn");
+            return Ok(new { success = true });
+        }
+
         private (string token, DateTime expiresAt) GenerateJwtToken(ResponseAccountDto account)
         {
             var jwt = _configuration.GetSection("Jwt");

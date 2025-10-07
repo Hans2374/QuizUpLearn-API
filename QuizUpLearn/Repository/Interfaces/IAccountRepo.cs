@@ -9,6 +9,7 @@ namespace Repository.Interfaces
         Task<IEnumerable<Account>> GetAllAsync(bool includeDeleted = false);
         Task<Account?> GetByEmailAsync(string email);
         Task<Account?> UpdateAsync(Guid id, Account account);
+        Task<bool> UpdatePasswordByEmailAsync(string email, string newPasswordHash);
         Task<bool> SoftDeleteAsync(Guid id);
         Task<bool> RestoreAsync(Guid id);
     }
