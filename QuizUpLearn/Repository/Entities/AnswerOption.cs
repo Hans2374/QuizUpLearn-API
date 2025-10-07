@@ -4,13 +4,12 @@ namespace Repository.Entities
 {
     public class AnswerOption : BaseEntity
     {
-        public Guid QuestionId { get; set; }
-
-        public required string OptionText { get; set; }
-        public bool IsCorrect { get; set; }
+        public Guid QuizId { get; set; }
+        public string OptionLabel { get; set; }
+        public string OptionText { get; set; }
         public int OrderIndex { get; set; }
-
+        public bool IsCorrect { get; set; } = false;
         // Navigation
-        public virtual Question? Question { get; set; }
+        public virtual Quiz? Question { get; set; }
     }
 }

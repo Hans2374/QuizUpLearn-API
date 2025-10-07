@@ -13,8 +13,11 @@ namespace Repository.DBContext
         public DbSet<User> Users { get; set; }
         public DbSet<OtpVerification> OTPVerifications { get; set; }
         public DbSet<QuizSet> QuizSets { get; set; }
-        public DbSet<Question> Questions { get; set; }
+        public DbSet<Quiz> Quizzes { get; set; }
         public DbSet<AnswerOption> AnswerOptions { get; set; }
+        public DbSet<QuizAttempt> QuizAttempts { get; set; }
+        public DbSet<QuizAttemptDetail> QuizAttemptDetails { get; set; }
+
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -22,6 +25,12 @@ namespace Repository.DBContext
                 .HasOne(a => a.User)
                 .WithOne(u => u.Account)
                 .HasForeignKey<Account>(a => a.UserId);
+            modelBuilder.Entity<QuizAttempt>()
+                .Property(q => q.Accuracy)
+                .HasPrecision(3, 2);
+            modelBuilder.Entity<QuizSet>()
+                .Property(q => q.AverageScore)
+                .HasPrecision(5, 2);
         }
     }
 }

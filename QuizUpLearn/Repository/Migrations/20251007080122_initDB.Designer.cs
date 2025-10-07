@@ -12,8 +12,8 @@ using Repository.DBContext;
 namespace Repository.Migrations
 {
     [DbContext(typeof(MyDbContext))]
-    [Migration("20250923032653_InitDb")]
-    partial class InitDb
+    [Migration("20251007080122_initDB")]
+    partial class initDB
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -106,6 +106,10 @@ namespace Repository.Migrations
                     b.Property<bool>("IsCorrect")
                         .HasColumnType("bit");
 
+                    b.Property<string>("OptionLabel")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<string>("OptionText")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
@@ -113,7 +117,7 @@ namespace Repository.Migrations
                     b.Property<int>("OrderIndex")
                         .HasColumnType("int");
 
-                    b.Property<Guid>("QuestionId")
+                    b.Property<Guid>("QuizId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -121,7 +125,7 @@ namespace Repository.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("QuestionId");
+                    b.HasIndex("QuizId");
 
                     b.ToTable("AnswerOptions");
                 });
@@ -171,11 +175,19 @@ namespace Repository.Migrations
                     b.ToTable("OTPVerifications");
                 });
 
-            modelBuilder.Entity("Repository.Entities.Question", b =>
+            modelBuilder.Entity("Repository.Entities.Quiz", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("AudioURL")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("CorrectAnswer")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
@@ -183,33 +195,31 @@ namespace Repository.Migrations
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<string>("DifficultyLevel")
-                        .HasColumnType("nvarchar(max)");
-
-                    b.Property<string>("Explanation")
+                    b.Property<string>("ImageURL")
+                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
-                    b.Property<int>("OrderIndex")
-                        .HasColumnType("int");
-
-                    b.Property<int>("Points")
+                    b.Property<int?>("OrderIndex")
                         .HasColumnType("int");
 
                     b.Property<string>("QuestionText")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<string>("QuestionType")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<Guid>("QuizSetId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<int>("TimeLimit")
+                    b.Property<string>("TOEICPart")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("TimesAnswered")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TimesCorrect")
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("UpdatedAt")
@@ -219,7 +229,116 @@ namespace Repository.Migrations
 
                     b.HasIndex("QuizSetId");
 
-                    b.ToTable("Questions");
+                    b.ToTable("Quizzes");
+                });
+
+            modelBuilder.Entity("Repository.Entities.QuizAttempt", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Accuracy")
+                        .HasPrecision(3, 2)
+                        .HasColumnType("decimal(3,2)");
+
+                    b.Property<string>("AttemptType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("CorrectAnswers")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool?>("IsWinner")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("OpponentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("QuizSetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Score")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("TimeSpent")
+                        .HasColumnType("int");
+
+                    b.Property<int>("TotalQuestions")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("WrongAnswers")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuizSetId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("QuizAttempts");
+                });
+
+            modelBuilder.Entity("Repository.Entities.QuizAttemptDetail", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AttemptId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<bool?>("IsCorrect")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("QuestionId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("QuizAttemptId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("QuizId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("TimeSpent")
+                        .HasColumnType("int");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("UserAnswer")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("QuizAttemptId");
+
+                    b.HasIndex("QuizId");
+
+                    b.ToTable("QuizAttemptDetails");
                 });
 
             modelBuilder.Entity("Repository.Entities.QuizSet", b =>
@@ -228,23 +347,20 @@ namespace Repository.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<string>("AccessCode")
-                        .IsRequired()
-                        .HasColumnType("nvarchar(max)");
-
                     b.Property<Guid?>("AccountId")
                         .HasColumnType("uniqueidentifier");
 
-                    b.Property<double>("AvgScore")
-                        .HasColumnType("float");
-
-                    b.Property<string>("Category")
-                        .HasColumnType("nvarchar(max)");
+                    b.Property<decimal>("AverageScore")
+                        .HasPrecision(5, 2)
+                        .HasColumnType("decimal(5,2)");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("datetime2");
 
-                    b.Property<Guid>("CreatorId")
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("CreatorId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<DateTime?>("DeletedAt")
@@ -255,25 +371,38 @@ namespace Repository.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("DifficultyLevel")
+                        .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int>("EstimatedTime")
+                    b.Property<bool>("IsAIGenerated")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPremiumOnly")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsPublished")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("QuizType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SkillType")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("TOEICPart")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int?>("TimeLimit")
                         .HasColumnType("int");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("bit");
-
-                    b.Property<bool>("IsPublic")
-                        .HasColumnType("bit");
-
-                    b.Property<string>("ThumbnailUrl")
-                        .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("Title")
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
-                    b.Property<int>("TotalPlays")
+                    b.Property<int>("TotalAttempts")
                         .HasColumnType("int");
 
                     b.Property<int>("TotalQuestions")
@@ -403,9 +532,9 @@ namespace Repository.Migrations
 
             modelBuilder.Entity("Repository.Entities.AnswerOption", b =>
                 {
-                    b.HasOne("Repository.Entities.Question", "Question")
+                    b.HasOne("Repository.Entities.Quiz", "Question")
                         .WithMany("AnswerOptions")
-                        .HasForeignKey("QuestionId")
+                        .HasForeignKey("QuizId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -423,15 +552,51 @@ namespace Repository.Migrations
                     b.Navigation("Account");
                 });
 
-            modelBuilder.Entity("Repository.Entities.Question", b =>
+            modelBuilder.Entity("Repository.Entities.Quiz", b =>
                 {
                     b.HasOne("Repository.Entities.QuizSet", "QuizSet")
-                        .WithMany("Questions")
+                        .WithMany("Quizzes")
                         .HasForeignKey("QuizSetId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("QuizSet");
+                });
+
+            modelBuilder.Entity("Repository.Entities.QuizAttempt", b =>
+                {
+                    b.HasOne("Repository.Entities.QuizSet", "QuizSet")
+                        .WithMany("QuizAttempts")
+                        .HasForeignKey("QuizSetId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Repository.Entities.User", "User")
+                        .WithMany("QuizAttempts")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("QuizSet");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Repository.Entities.QuizAttemptDetail", b =>
+                {
+                    b.HasOne("Repository.Entities.QuizAttempt", "QuizAttempt")
+                        .WithMany("QuizAttemptDetails")
+                        .HasForeignKey("QuizAttemptId");
+
+                    b.HasOne("Repository.Entities.Quiz", "Quiz")
+                        .WithMany("QuizAttemptDetails")
+                        .HasForeignKey("QuizId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Quiz");
+
+                    b.Navigation("QuizAttempt");
                 });
 
             modelBuilder.Entity("Repository.Entities.QuizSet", b =>
@@ -441,10 +606,8 @@ namespace Repository.Migrations
                         .HasForeignKey("AccountId");
 
                     b.HasOne("Repository.Entities.User", "Creator")
-                        .WithMany()
-                        .HasForeignKey("CreatorId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .WithMany("CreatedQuizSets")
+                        .HasForeignKey("CreatorId");
 
                     b.Navigation("Creator");
                 });
@@ -456,14 +619,23 @@ namespace Repository.Migrations
                     b.Navigation("QuizSets");
                 });
 
-            modelBuilder.Entity("Repository.Entities.Question", b =>
+            modelBuilder.Entity("Repository.Entities.Quiz", b =>
                 {
                     b.Navigation("AnswerOptions");
+
+                    b.Navigation("QuizAttemptDetails");
+                });
+
+            modelBuilder.Entity("Repository.Entities.QuizAttempt", b =>
+                {
+                    b.Navigation("QuizAttemptDetails");
                 });
 
             modelBuilder.Entity("Repository.Entities.QuizSet", b =>
                 {
-                    b.Navigation("Questions");
+                    b.Navigation("QuizAttempts");
+
+                    b.Navigation("Quizzes");
                 });
 
             modelBuilder.Entity("Repository.Entities.Role", b =>
@@ -474,6 +646,10 @@ namespace Repository.Migrations
             modelBuilder.Entity("Repository.Entities.User", b =>
                 {
                     b.Navigation("Account");
+
+                    b.Navigation("CreatedQuizSets");
+
+                    b.Navigation("QuizAttempts");
                 });
 #pragma warning restore 612, 618
         }

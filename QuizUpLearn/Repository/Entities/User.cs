@@ -19,5 +19,7 @@ namespace Repository.Entities
 
         // Navigation
         public virtual Account? Account { get; set; }
+        public virtual ICollection<QuizSet> CreatedQuizSets { get; set; } = new List<QuizSet>();
+        public virtual ICollection<QuizAttempt> QuizAttempts { get; set; } = new List<QuizAttempt>();
     }
 }
