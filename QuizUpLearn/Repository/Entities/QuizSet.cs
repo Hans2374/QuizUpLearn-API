@@ -4,24 +4,27 @@ namespace Repository.Entities
 {
     public class QuizSet : BaseEntity
     {
-        public required string Title { get; set; }
-        public string Description { get; set; } = string.Empty;
+        public string Title { get; set; }
+        public string Description { get; set; }
+        public string QuizType { get; set; }
+        public string TOEICPart { get; set; }
+        public string SkillType { get; set; }
+        public string DifficultyLevel { get; set; }
 
-        public Guid CreatorId { get; set; } //UserID
+        public int TotalQuestions { get; set; } = 0;
+        public int? TimeLimit { get; set; }
 
-        public string? Category { get; set; }
-        public string? DifficultyLevel { get; set; }
-        public bool IsPublic { get; set; }
-        public string AccessCode { get; set; } = Random.Shared.Next(0001, 9999).ToString();
-        public string? ThumbnailUrl { get; set; }
-        public int EstimatedTime { get; set; }
-        public int TotalQuestions { get; set; }
-        public int TotalPlays { get; set; }
-        public double AvgScore { get; set; }
-        public bool IsActive { get; set; }
+        public Guid CreatedBy { get; set; }
+        public bool IsAIGenerated { get; set; } = true;
+        public bool IsPublished { get; set; } = false;
+        public bool IsPremiumOnly { get; set; } = false;
+
+        public int TotalAttempts { get; set; } = 0;
+        public decimal AverageScore { get; set; } = 0;
 
         // Navigation
         public virtual User? Creator { get; set; }
-        public virtual ICollection<Question> Questions { get; set; } = new List<Question>();
+        public virtual ICollection<Quiz> Quizzes { get; set; } = new List<Quiz>();
+        public virtual ICollection<QuizAttempt> QuizAttempts { get; set; } = new List<QuizAttempt>();
     }
 }

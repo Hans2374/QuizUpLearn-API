@@ -36,3 +36,6 @@ Generated\ Files/
 *.log
 *.DS_Store
 Thumbs.db
+
+appsettings.json
+appsettings.*.json
