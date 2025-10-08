@@ -1,0 +1,71 @@
+using BusinessLogic.DTOs;
+using BusinessLogic.Interfaces;
+using Microsoft.AspNetCore.Mvc;
+
+namespace QuizUpLearn.API.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class QuizAttemptDetailController : ControllerBase
+    {
+        private readonly IQuizAttemptDetailService _service;
+
+        public QuizAttemptDetailController(IQuizAttemptDetailService service)
+        {
+            _service = service;
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> GetAll([FromQuery] bool isDeleted = false)
+        {
+            var quizAttemptDetails = await _service.GetAllAsync(isDeleted);
+            return Ok(quizAttemptDetails);
+        }
+
+        [HttpGet("{id}")]
+        public async Task<IActionResult> GetById([FromRoute] Guid id)
+        {
+            var quizAttemptDetail = await _service.GetByIdAsync(id);
+            if (quizAttemptDetail == null) return NotFound();
+            return Ok(quizAttemptDetail);
+        }
+
+        [HttpGet("attempt/{attemptId}")]
+        public async Task<IActionResult> GetByAttemptId([FromRoute] Guid attemptId, [FromQuery] bool isDeleted = false)
+        {
+            var quizAttemptDetails = await _service.GetByAttemptIdAsync(attemptId, isDeleted);
+            return Ok(quizAttemptDetails);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Create([FromBody] RequestQuizAttemptDetailDto dto)
+        {
+            var created = await _service.CreateAsync(dto);
+            return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
+        }
+
+        [HttpPut("{id}")]
+        public async Task<IActionResult> Update([FromRoute] Guid id, [FromBody] RequestQuizAttemptDetailDto dto)
+        {
+            var updated = await _service.UpdateAsync(id, dto);
+            if (updated == null) return NotFound();
+            return Ok(updated);
+        }
+
+        [HttpDelete("{id}")]
+        public async Task<IActionResult> SoftDelete([FromRoute] Guid id)
+        {
+            var ok = await _service.SoftDeleteAsync(id);
+            if (!ok) return NotFound();
+            return NoContent();
+        }
+
+        [HttpPost("{id}/restore")]
+        public async Task<IActionResult> Restore([FromRoute] Guid id)
+        {
+            var ok = await _service.RestoreAsync(id);
+            if (!ok) return NotFound();
+            return Ok();
+        }
+    }
+}
