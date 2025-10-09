@@ -79,6 +79,9 @@ namespace QuizUpLearn.API.DI
             services.AddScoped<IOtpVerificationRepo, OtpVerificationRepo>();
             services.AddScoped<IQuizSetRepo, QuizSetRepo>();
             services.AddScoped<IQuizRepo, QuizRepo>();
+            services.AddScoped<IQuizAttemptRepo, QuizAttemptRepo>();
+            services.AddScoped<IQuizAttemptDetailRepo, QuizAttemptDetailRepo>();
+            services.AddScoped<IAnswerOptionRepo, AnswerOptionRepo>();
         }
 
         public static void AddAutoMapper(this IServiceCollection services)
@@ -98,6 +101,9 @@ namespace QuizUpLearn.API.DI
             services.AddScoped<IMailerSendService, MailerSendService>();
             services.AddScoped<IQuizSetService, QuizSetService>();
             services.AddScoped<IQuizService, QuizService>();
+            services.AddScoped<IQuizAttemptService, QuizAttemptService>();
+            services.AddScoped<IQuizAttemptDetailService, QuizAttemptDetailService>();
+            services.AddScoped<IAnswerOptionService, AnswerOptionService>();
         }
     }
 }
