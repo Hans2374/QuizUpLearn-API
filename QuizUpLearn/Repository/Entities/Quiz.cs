@@ -6,7 +6,7 @@ namespace Repository.Entities
     {
         public Guid QuizSetId { get; set; }
         public string QuestionText { get; set; }
-        public string CorrectAnswer { get; set; }
+        public string CorrectAnswer { get; set; } //useless
         public string AudioURL { get; set; }
         public string ImageURL { get; set; }
         public string TOEICPart { get; set; }

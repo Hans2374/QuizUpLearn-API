@@ -5,7 +5,7 @@ namespace BusinessLogic.DTOs
         public required Guid QuizId { get; set; }
         public required string OptionLabel { get; set; }
         public required string OptionText { get; set; }
-        public int OrderIndex { get; set; }
+        public int OrderIndex { get; set; } = 0;
         public bool IsCorrect { get; set; } = false;
     }
 }

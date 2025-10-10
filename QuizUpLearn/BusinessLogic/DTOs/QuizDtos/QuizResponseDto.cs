@@ -16,6 +16,6 @@
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
         public DateTime? DeletedAt { get; set; }
-        //public List<AnswerOptionResponseDto> AnswerOptions { get; set; } = new List<AnswerOptionResponseDto>();
+        public List<ResponseAnswerOptionDto> AnswerOptions { get; set; } = new List<ResponseAnswerOptionDto>();
     }
 }
