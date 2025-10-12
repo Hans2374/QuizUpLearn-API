@@ -106,6 +106,7 @@ namespace QuizUpLearn.API.DI
             services.AddScoped<IQuizAttemptDetailService, QuizAttemptDetailService>();
             services.AddScoped<IAnswerOptionService, AnswerOptionService>();
             services.AddScoped<IAIService, AIService>();
+            services.AddScoped<IDashboardService, DashboardService>();
         }
     }
 }

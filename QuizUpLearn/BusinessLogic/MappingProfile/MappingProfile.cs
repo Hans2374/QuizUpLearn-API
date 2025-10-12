@@ -34,6 +34,12 @@ namespace BusinessLogic.MappingProfile
             // Pagination Mappings
             CreateMap<DTOs.PaginationRequestDto, DTOs.PaginationRequestDto>().ReverseMap();
             
+            // Dashboard Mappings
+            CreateMap<Repository.Entities.QuizAttempt, DTOs.DashboardDtos.QuizHistoryDto>()
+                .ForMember(dest => dest.QuizName, opt => opt.MapFrom(src => src.Quiz.QuestionText))
+                .ForMember(dest => dest.Category, opt => opt.MapFrom(src => src.Quiz.TOEICPart))
+                .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.ScorePercentage >= 70 ? "Passed" : "Failed"));
+            
             //Add other mappings here as needed
         }
     }
