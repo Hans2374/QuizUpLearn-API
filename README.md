@@ -33,6 +33,9 @@
   "Gemini": {
     "ApiKey": "AIzaSyBShA_ksvzBrQ6A6AWCpNxjfQT3yTZtr34"
   },
+  "OpenRouter": {
+      "ApiKey": "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"
+  },
   "AllowedHosts": "*"
 }
 
