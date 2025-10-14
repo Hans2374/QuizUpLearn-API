@@ -20,4 +20,10 @@
         public string OptionText { get; set; }
         public bool IsCorrect { get; set; }
     }
+
+    public class AIValidationResponseDto
+    {
+        public bool IsValid { get; set; }
+        public string Feedback { get; set; }
+    }
 }
