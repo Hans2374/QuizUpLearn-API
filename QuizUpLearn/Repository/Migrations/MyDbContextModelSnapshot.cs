@@ -85,7 +85,7 @@ namespace Repository.Migrations
                     b.HasIndex("UserId")
                         .IsUnique();
 
-                    b.ToTable("Accounts");
+                    b.ToTable("Accounts", (string)null);
                 });
 
             modelBuilder.Entity("Repository.Entities.AnswerOption", b =>
@@ -124,7 +124,7 @@ namespace Repository.Migrations
 
                     b.HasIndex("QuizId");
 
-                    b.ToTable("AnswerOptions");
+                    b.ToTable("AnswerOptions", (string)null);
                 });
 
             modelBuilder.Entity("Repository.Entities.OtpVerification", b =>
@@ -169,7 +169,7 @@ namespace Repository.Migrations
 
                     b.HasIndex("AccountId");
 
-                    b.ToTable("OTPVerifications");
+                    b.ToTable("OTPVerifications", (string)null);
                 });
 
             modelBuilder.Entity("Repository.Entities.Quiz", b =>
@@ -226,7 +226,7 @@ namespace Repository.Migrations
 
                     b.HasIndex("QuizSetId");
 
-                    b.ToTable("Quizzes");
+                    b.ToTable("Quizzes", (string)null);
                 });
 
             modelBuilder.Entity("Repository.Entities.QuizAttempt", b =>
@@ -289,7 +289,7 @@ namespace Repository.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("QuizAttempts");
+                    b.ToTable("QuizAttempts", (string)null);
                 });
 
             modelBuilder.Entity("Repository.Entities.QuizAttemptDetail", b =>
@@ -335,7 +335,7 @@ namespace Repository.Migrations
 
                     b.HasIndex("QuizId");
 
-                    b.ToTable("QuizAttemptDetails");
+                    b.ToTable("QuizAttemptDetails", (string)null);
                 });
 
             modelBuilder.Entity("Repository.Entities.QuizSet", b =>
@@ -404,7 +404,7 @@ namespace Repository.Migrations
 
                     b.HasIndex("CreatorId");
 
-                    b.ToTable("QuizSets");
+                    b.ToTable("QuizSets", (string)null);
                 });
 
             modelBuilder.Entity("Repository.Entities.Role", b =>
@@ -442,7 +442,7 @@ namespace Repository.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Roles");
+                    b.ToTable("Roles", (string)null);
                 });
 
             modelBuilder.Entity("Repository.Entities.User", b =>
@@ -495,7 +495,7 @@ namespace Repository.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 
             modelBuilder.Entity("Repository.Entities.Account", b =>
