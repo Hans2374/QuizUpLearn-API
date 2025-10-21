@@ -1,0 +1,33 @@
+# Build folders
+**/bin/
+**/obj/
+**/out/
+
+# User-specific files
+*.swp
+*.user
+*.suo
+*.tmp
+*.log
+
+# VS / Rider / build system
+.vs/
+.idea/
+.vscode/
+*.csproj.user
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile
+docker-compose.*
+
+# OS files
+*.DS_Store
+Thumbs.db
+
+# Test files or local settings
+appsettings.json
+appsettings.Development.json
