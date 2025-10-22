@@ -1,6 +1,5 @@
 # appsettings.json
 
-
 {
   "Logging": {
     "LogLevel": {
@@ -9,7 +8,8 @@
     }
   },
   "ConnectionStrings": {
-    "DefaultConnection": "Server=local;Uid=sa;Pwd=12345;Database=QuizUpLearnDB;Trusted_Connection=true;TrustServerCertificate=true;MultipleActiveResultSets=True;"
+    "DefaultConnection": "Server=Manh-Laptop\\SQLEXPRESS;Uid=sa;Pwd=12345;Database=QuizUpLearnDB;Trusted_Connection=true;TrustServerCertificate=true;MultipleActiveResultSets=True;",
+    "PostgreSqlConnection": "Host=ep-fragrant-field-a1w48qp3-pooler.ap-southeast-1.aws.neon.tech;Database=neondb;Username=neondb_owner;Password=npg_RWGbey5x7InM;SSL Mode=Require;Trust Server Certificate=true"
   },
   "Jwt": {
     "Key": "u8hK3pL0sXz9Nd2A4vYb7Rf5Qw9Zx1Cm",
@@ -24,7 +24,7 @@
     "APISecret": "C3IgiXbQtwZHFjg7IeSctV59JTs"
   },
   "MailerSend": {
-    "ApiKey": "mlsn.5b7c69a115b1c21634735bb6358cac29d724d25df732c477676e4c86e0026066",
+    "ApiKey": "mlsn.e38e2c45857322caa4a1df960b1df802ffe9a9bfbb4dd30b1eeabe3d99c2eadb",
     "FromEmail": "no-reply@test-69oxl5e79rzl785k.mlsender.net",
     "FromName": "QuizUpLearn",
     "BaseUrl": "https://api.mailersend.com",
@@ -38,8 +38,6 @@
   },
   "AllowedHosts": "*"
 }
-
-
 
 
 
