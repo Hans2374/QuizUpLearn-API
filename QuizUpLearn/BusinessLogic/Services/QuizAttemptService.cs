@@ -11,13 +11,15 @@ namespace BusinessLogic.Services
         private readonly IQuizAttemptRepo _repo;
         private readonly IQuizAttemptDetailRepo _detailRepo;
         private readonly IQuizRepo _quizRepo;
+        private readonly IAnswerOptionRepo _answerOptionRepo;
         private readonly IMapper _mapper;
 
-        public QuizAttemptService(IQuizAttemptRepo repo, IQuizAttemptDetailRepo detailRepo, IQuizRepo quizRepo, IMapper mapper)
+        public QuizAttemptService(IQuizAttemptRepo repo, IQuizAttemptDetailRepo detailRepo, IQuizRepo quizRepo, IAnswerOptionRepo answerOptionRepo, IMapper mapper)
         {
             _repo = repo;
             _detailRepo = detailRepo;
             _quizRepo = quizRepo;
+            _answerOptionRepo = answerOptionRepo;
             _mapper = mapper;
         }
 
@@ -122,8 +124,17 @@ namespace BusinessLogic.Services
             int score = 0;
             foreach (var d in detailList)
             {
-                var quiz = await _quizRepo.GetQuizByIdAsync(d.QuestionId);
-                bool isCorrect = string.Equals(d.UserAnswer, quiz.CorrectAnswer, StringComparison.OrdinalIgnoreCase);
+                // Lấy tất cả AnswerOption của quiz này
+                var answerOptions = await _answerOptionRepo.GetByQuizIdAsync(d.QuestionId, includeDeleted: false);
+                
+                // Kiểm tra xem UserAnswer có phải là ID của AnswerOption có IsCorrect = true không
+                bool isCorrect = false;
+                if (Guid.TryParse(d.UserAnswer, out Guid userAnswerId))
+                {
+                    var selectedAnswerOption = answerOptions.FirstOrDefault(ao => ao.Id == userAnswerId);
+                    isCorrect = selectedAnswerOption?.IsCorrect == true;
+                }
+                
                 if (isCorrect) { correct++; score++; }
                 else { wrong++; }
 
