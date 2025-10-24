@@ -123,15 +123,20 @@ namespace BusinessLogic.Services
             
             foreach (var d in detailList)
             {
-                var selectedAnswerOption = await _answerOptionRepo.GetByIdAsync(d.SelectedAnswerOptionId);
-                
+                // Parse UserAnswer (AnswerOptionId) thành Guid
                 bool isCorrect = false;
-                if (selectedAnswerOption != null)
+                if (Guid.TryParse(d.UserAnswer, out Guid answerOptionId))
                 {
-                    // Kiểm tra AnswerOption có thuộc về Quiz này không
-                    if (selectedAnswerOption.QuizId == d.QuestionId)
+                    // Lấy AnswerOption dựa trên ID
+                    var selectedAnswerOption = await _answerOptionRepo.GetByIdAsync(answerOptionId);
+                    
+                    if (selectedAnswerOption != null)
                     {
-                        isCorrect = selectedAnswerOption.IsCorrect;
+                        // Kiểm tra AnswerOption có thuộc về Quiz này không
+                        if (selectedAnswerOption.QuizId == d.QuestionId)
+                        {
+                            isCorrect = selectedAnswerOption.IsCorrect;
+                        }
                     }
                 }
                 

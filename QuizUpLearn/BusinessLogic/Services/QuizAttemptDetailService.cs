@@ -20,8 +20,6 @@ namespace BusinessLogic.Services
         public async Task<ResponseQuizAttemptDetailDto> CreateAsync(RequestQuizAttemptDetailDto dto)
         {
             var entity = _mapper.Map<QuizAttemptDetail>(dto);
-            // Set UserAnswer để backward compatibility (convert Guid to string)
-            entity.UserAnswer = dto.SelectedAnswerOptionId.ToString();
             var created = await _repo.CreateAsync(entity);
             return _mapper.Map<ResponseQuizAttemptDetailDto>(created);
         }
@@ -57,8 +55,6 @@ namespace BusinessLogic.Services
         public async Task<ResponseQuizAttemptDetailDto?> UpdateAsync(Guid id, RequestQuizAttemptDetailDto dto)
         {
             var entity = _mapper.Map<QuizAttemptDetail>(dto);
-            // Set UserAnswer để backward compatibility (convert Guid to string)
-            entity.UserAnswer = dto.SelectedAnswerOptionId.ToString();
             var updated = await _repo.UpdateAsync(id, entity);
             return updated == null ? null : _mapper.Map<ResponseQuizAttemptDetailDto>(updated);
         }
