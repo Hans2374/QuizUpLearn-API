@@ -34,6 +34,11 @@ namespace BusinessLogic.MappingProfile
             // Answer Option Mappings
             CreateMap<Repository.Entities.AnswerOption, DTOs.ResponseAnswerOptionDto>().ReverseMap();
             CreateMap<Repository.Entities.AnswerOption, DTOs.RequestAnswerOptionDto>().ReverseMap();
+            CreateMap<Repository.Entities.AnswerOption, DTOs.AnswerOptionStartDto>().ReverseMap();
+            
+            // Quiz Start Response Mappings
+            CreateMap<Repository.Entities.Quiz, DTOs.QuizDtos.QuizStartResponseDto>()
+                .ForMember(dest => dest.AnswerOptions, opt => opt.MapFrom(src => src.AnswerOptions));
             
             // Pagination Mappings
             CreateMap<DTOs.PaginationRequestDto, DTOs.PaginationRequestDto>().ReverseMap();

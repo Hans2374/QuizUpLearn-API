@@ -58,10 +58,8 @@ namespace BusinessLogic.Services
 
             var created = await _repo.CreateAsync(attempt);
 
-            // Map to QuizResponseDto using mapper
-            var quizDtos = _mapper.Map<IEnumerable<BusinessLogic.DTOs.QuizDtos.QuizResponseDto>>(selected)
-                                  .Select(q => { q.CorrectAnswer = string.Empty; return q; })
-                                  .ToList();
+            // Map to QuizStartResponseDto using mapper
+            var quizDtos = _mapper.Map<IEnumerable<BusinessLogic.DTOs.QuizDtos.QuizStartResponseDto>>(selected).ToList();
 
             return new ResponseSingleStartDto
             {
@@ -122,17 +120,19 @@ namespace BusinessLogic.Services
             int correct = 0;
             int wrong = 0;
             int score = 0;
+            
             foreach (var d in detailList)
             {
-                // Lấy tất cả AnswerOption của quiz này
-                var answerOptions = await _answerOptionRepo.GetByQuizIdAsync(d.QuestionId, includeDeleted: false);
+                var selectedAnswerOption = await _answerOptionRepo.GetByIdAsync(d.SelectedAnswerOptionId);
                 
-                // Kiểm tra xem UserAnswer có phải là ID của AnswerOption có IsCorrect = true không
                 bool isCorrect = false;
-                if (Guid.TryParse(d.UserAnswer, out Guid userAnswerId))
+                if (selectedAnswerOption != null)
                 {
-                    var selectedAnswerOption = answerOptions.FirstOrDefault(ao => ao.Id == userAnswerId);
-                    isCorrect = selectedAnswerOption?.IsCorrect == true;
+                    // Kiểm tra AnswerOption có thuộc về Quiz này không
+                    if (selectedAnswerOption.QuizId == d.QuestionId)
+                    {
+                        isCorrect = selectedAnswerOption.IsCorrect;
+                    }
                 }
                 
                 if (isCorrect) { correct++; score++; }

@@ -6,7 +6,8 @@ namespace Repository.Entities
     {
         public Guid AttemptId { get; set; }
         public Guid QuestionId { get; set; }
-        public string UserAnswer { get; set; }
+        public string UserAnswer { get; set; } // Giữ lại để backward compatibility
+        public Guid SelectedAnswerOptionId { get; set; } // ID của AnswerOption được chọn
         public bool? IsCorrect { get; set; }
         public int? TimeSpent { get; set; }
 
@@ -17,5 +18,6 @@ namespace Repository.Entities
         // Navigation properties
         public virtual QuizAttempt? QuizAttempt { get; set; }
         public virtual Quiz Quiz { get; set; }
+        public virtual AnswerOption? SelectedAnswerOption { get; set; }
     }
 }
