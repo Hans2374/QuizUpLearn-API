@@ -52,7 +52,7 @@ jobs:
             - name: Debug folder structure
               run: pwd && ls -R ./publish
             - name: Create .env file
-              working-directory: ./publish/QuizUpLearn-API/QuizUpLearn
+              working-directory: ./publish/QuizUpLearn-API
               run: |
                   echo "ASPNETCORE_ENVIRONMENT=${{ secrets.ASPNETCORE_ENVIRONMENT }}" >> .env
                   echo "CLOUDINARY__APIKEY=${{ secrets.CLOUDINARY__APIKEY }}" >> .env
@@ -67,10 +67,10 @@ jobs:
                   echo "MAILERSEND__FROMNAME=${{ secrets.MAILERSEND__FROMNAME }}" >> .env
                   echo "OPENROUTER__APIKEY=${{ secrets.OPENROUTER__APIKEY }}" >> .env
             - name: Build images with Docker Compose
-              working-directory: ./publish/QuizUpLearn-API/QuizUpLearn
+              working-directory: ./publish/QuizUpLearn-API
               run: docker compose build
             - name: Push images to Docker Hub
-              working-directory: ./publish/QuizUpLearn-API/QuizUpLearn
+              working-directory: ./publish/QuizUpLearn-API
               run: docker compose push
             - name: Logout from Docker Hub
               run: docker logout
