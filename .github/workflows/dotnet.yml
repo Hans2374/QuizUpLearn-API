@@ -5,9 +5,9 @@ name: .NET
 
 on:
     push:
-        branches: ["main"]
+        branches: ["main", "Implement-cd"]
     pull_request:
-        branches: ["main"]
+        branches: ["main", "Implement-cd"]
 
 jobs:
     build:
@@ -27,6 +27,7 @@ jobs:
               run: dotnet test QuizUpLearn/QuizUpLearn.sln --no-build --verbosity normal
 
     deploy:
+        if: github.ref == 'refs/heads/main'
         runs-on: ubuntu-latest
         needs: build
 
@@ -48,6 +49,21 @@ jobs:
               with:
                   username: ${{ secrets.DOCKERHUB_USERNAME }}
                   password: ${{ secrets.DOCKERHUB_TOKEN }}
+            - name: Create .env file
+              working-directory: ./publish
+              run: |
+                  echo "ASPNETCORE_ENVIRONMENT=${{ secrets.ASPNETCORE_ENVIRONMENT }}" >> .env
+                  echo "CLOUDINARY__APIKEY=${{ secrets.CLOUDINARY__APIKEY }}" >> .env
+                  echo "CLOUDINARY__APISECRET=${{ secrets.CLOUDINARY__APISECRET }}" >> .env
+                  echo "CLOUDINARY__CLOUDNAME=${{ secrets.CLOUDINARY__CLOUDNAME }}" >> .env
+                  echo "CONNECTIONSTRINGS__POSTGRESQLCONNECTION=${{ secrets.CONNECTIONSTRINGS__POSTGRESQLCONNECTION }}" >> .env
+                  echo "GEMINI__APIKEY=${{ secrets.GEMINI__APIKEY }}" >> .env
+                  echo "JWT__ISSUER=${{ secrets.JWT__ISSUER }}" >> .env
+                  echo "JWT__KEY=${{ secrets.JWT__KEY }}" >> .env
+                  echo "MAILERSEND__APIKEY=${{ secrets.MAILERSEND__APIKEY }}" >> .env
+                  echo "MAILERSEND__FROMEMAIL=${{ secrets.MAILERSEND__FROMEMAIL }}" >> .env
+                  echo "MAILERSEND__FROMNAME=${{ secrets.MAILERSEND__FROMNAME }}" >> .env
+                  echo "OPENROUTER__APIKEY=${{ secrets.OPENROUTER__APIKEY }}" >> .env
             - name: Build images with Docker Compose
               working-directory: ./publish
               run: docker compose build
