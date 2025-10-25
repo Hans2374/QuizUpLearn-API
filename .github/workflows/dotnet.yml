@@ -65,7 +65,7 @@ jobs:
                   echo "MAILERSEND__FROMNAME=${{ secrets.MAILERSEND__FROMNAME }}" >> .env
                   echo "OPENROUTER__APIKEY=${{ secrets.OPENROUTER__APIKEY }}" >> .env
             - name: Build images with Docker Compose
-              working-directory: ./publish
+              working-directory: ./publish/QuizUpLearn-API/QuizUpLearn
               run: docker compose build
             - name: Push images to Docker Hub
               working-directory: ./publish
