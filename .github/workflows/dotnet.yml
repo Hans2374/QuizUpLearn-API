@@ -68,7 +68,7 @@ jobs:
               working-directory: ./publish/QuizUpLearn-API/QuizUpLearn
               run: docker compose build
             - name: Push images to Docker Hub
-              working-directory: ./publish
+              working-directory: ./publish/QuizUpLearn-API/QuizUpLearn
               run: docker compose push
             - name: Logout from Docker Hub
               run: docker logout
