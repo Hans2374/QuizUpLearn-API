@@ -11,7 +11,8 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:3000") // Your frontend URL
+        // Cho phép mọi origin trong dev để test (production nên giới hạn)
+        policy.SetIsOriginAllowed(origin => true) // Allow any origin for development
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -33,11 +34,28 @@ builder.Services.AddInfrastructure(builder.Configuration);
 var jwtSection = builder.Configuration.GetSection("Jwt");
 var key = Encoding.UTF8.GetBytes(jwtSection["Key"]!);
 builder.Services.AddAuthentication(options =>
-{
+{   
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
     options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
 }).AddJwtBearer(options =>
 {
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            
+            // If the request is for a SignalR hub
+            var path = context.HttpContext.Request.Path;
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/game-hub"))
+            {
+                // Read the token out of the query string
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
+    
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
@@ -45,7 +63,8 @@ builder.Services.AddAuthentication(options =>
         ValidateIssuerSigningKey = true,
         ValidIssuer = jwtSection["Issuer"],
         ValidAudience = jwtSection["Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(key)
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ValidateLifetime = true
     };
 });
 
@@ -60,7 +79,6 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-// Enable CORS - Must be before authentication and authorization
 app.UseCors("AllowFrontend");
 
 app.UseMiddleware<QuizUpLearn.API.Middlewares.ExceptionHandlingMiddleware>();
@@ -71,7 +89,6 @@ app.UseAuthorization();
 
 app.MapControllers();
 
-// Map SignalR Hub
-app.MapHub<GameHub>("/game-hub");
+app.MapHub<GameHub>("/game-hub").RequireCors("AllowFrontend");
 
 app.Run();

@@ -1,306 +1,535 @@
 using BusinessLogic.DTOs;
 using Repository.Interfaces;
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BusinessLogic.Services
 {
+    /// <summary>
+    /// Service quản lý Kahoot-style realtime quiz game
+    /// State được lưu trong Memory (ConcurrentDictionary) 
+    /// Trong production nên dùng Redis
+    /// </summary>
     public class RealtimeGameService
     {
-        private readonly IQuizSetRepo _quizSetRepository;
-        private readonly IQuizRepo _quizRepository;
-        private readonly IAnswerOptionRepo _answerOptionRepository;
+        private readonly IServiceProvider _serviceProvider;
+        private readonly ILogger<RealtimeGameService> _logger;
 
-        // In-memory storage for game rooms
-        private static readonly ConcurrentDictionary<string, GameRoomInfoDto> _gameRooms = new();
-        private static readonly ConcurrentDictionary<string, List<GameQuestionDto>> _roomQuestions = new();
-        private static readonly ConcurrentDictionary<string, List<SubmitAnswerDto>> _roomAnswers = new();
-        private static readonly ConcurrentDictionary<string, string> _userConnections = new();
+        // In-memory storage (thay bằng Redis trong production)
+        private static readonly ConcurrentDictionary<string, GameSessionDto> _gameSessions = new(); // GamePin -> Session
+        private static readonly ConcurrentDictionary<string, Timer> _questionTimers = new(); // GamePin -> Timer
+        private static readonly ConcurrentDictionary<string, Dictionary<Guid, bool>> _correctAnswers = new(); // GamePin -> QuestionId -> IsCorrect map
 
         public RealtimeGameService(
-            IQuizSetRepo quizSetRepository,
-            IQuizRepo quizRepository,
-            IAnswerOptionRepo answerOptionRepository)
+            IServiceProvider serviceProvider,
+            ILogger<RealtimeGameService> logger)
         {
-            _quizSetRepository = quizSetRepository;
-            _quizRepository = quizRepository;
-            _answerOptionRepository = answerOptionRepository;
+            _serviceProvider = serviceProvider;
+            _logger = logger;
         }
 
-        // Tạo phòng game
-        public async Task<string> CreateGameRoomAsync(CreateGameRoomDto createDto)
+        // ==================== HOST CREATES GAME ====================
+        /// <summary>
+        /// Host tạo game session và nhận Game PIN
+        /// </summary>
+        public async Task<CreateGameResponseDto> CreateGameAsync(CreateGameDto dto)
         {
+            // Tạo scope để resolve scoped services
+            using var scope = _serviceProvider.CreateScope();
+            var quizSetRepository = scope.ServiceProvider.GetRequiredService<IQuizSetRepo>();
+            var quizRepository = scope.ServiceProvider.GetRequiredService<IQuizRepo>();
+            var answerOptionRepository = scope.ServiceProvider.GetRequiredService<IAnswerOptionRepo>();
+
             // Validate quiz set exists
-            var quizSet = await _quizSetRepository.GetQuizSetByIdAsync(new Guid(createDto.QuizSetId.ToString()));
+            var quizSet = await quizSetRepository.GetQuizSetByIdAsync(dto.QuizSetId);
             if (quizSet == null)
                 throw new ArgumentException("Quiz set not found");
 
-            // Generate unique room ID
-            var roomId = Guid.NewGuid().ToString("N")[..8].ToUpper();
-            
-            // Create game room
-            var gameRoom = new GameRoomInfoDto
+            // Load questions
+            var quizzes = await quizRepository.GetQuizzesByQuizSetIdAsync(dto.QuizSetId);
+            var questionsList = new List<QuestionDto>();
+            var correctAnswersMap = new Dictionary<Guid, bool>();
+
+            int questionNumber = 1;
+            foreach (var quiz in quizzes)
             {
-                RoomId = roomId,
-                HostUserId = createDto.HostUserId,
-                HostUserName = createDto.HostUserName,
-                QuizSetId = createDto.QuizSetId,
-                TimeLimit = createDto.TimeLimit,
-                Status = GameRoomStatus.Waiting,
+                var answerOptions = await answerOptionRepository.GetByQuizIdAsync(quiz.Id);
+                
+                var questionDto = new QuestionDto
+                {
+                    QuestionId = quiz.Id,
+                    QuestionText = quiz.QuestionText,
+                    ImageUrl = quiz.ImageURL,
+                    AudioUrl = quiz.AudioURL,
+                    QuestionNumber = questionNumber,
+                    TotalQuestions = quizzes.Count(),
+                    TimeLimit = dto.TimePerQuestion,
+                    AnswerOptions = answerOptions.Select(ao => new AnswerOptionDto
+                    {
+                        AnswerId = ao.Id,
+                        OptionText = ao.OptionText
+                        // Không gửi IsCorrect cho client!
+                    }).ToList()
+                };
+
+                questionsList.Add(questionDto);
+
+                // Lưu đáp án đúng vào map riêng
+                foreach (var ao in answerOptions)
+                {
+                    correctAnswersMap[ao.Id] = ao.IsCorrect;
+                }
+
+                questionNumber++;
+            }
+
+            // Generate unique 6-digit Game PIN
+            string gamePin;
+            do
+            {
+                gamePin = new Random().Next(100000, 999999).ToString();
+            } while (_gameSessions.ContainsKey(gamePin));
+
+            var gameSessionId = Guid.NewGuid();
+
+            // Create game session
+            var gameSession = new GameSessionDto
+            {
+                GamePin = gamePin,
+                GameSessionId = gameSessionId,
+                HostUserId = dto.HostUserId,
+                HostUserName = dto.HostUserName,
+                QuizSetId = dto.QuizSetId,
+                TimePerQuestion = dto.TimePerQuestion,
+                Status = GameStatus.Lobby,
+                Questions = questionsList,
+                CurrentQuestionIndex = 0,
                 CreatedAt = DateTime.UtcNow
             };
 
-            _gameRooms[roomId] = gameRoom;
+            _gameSessions[gamePin] = gameSession;
+            _correctAnswers[gamePin] = correctAnswersMap;
 
-            // Load questions for the room
-            await LoadQuestionsForRoomAsync(roomId, createDto.QuizSetId);
+            _logger.LogInformation($"Game created with PIN: {gamePin} by Host: {dto.HostUserName}");
 
-            return roomId;
+            return new CreateGameResponseDto
+            {
+                GamePin = gamePin,
+                GameSessionId = gameSessionId,
+                CreatedAt = gameSession.CreatedAt
+            };
         }
 
-        // Join phòng game
-        public async Task<bool> JoinGameRoomAsync(JoinGameRoomDto joinDto)
+        // ==================== LOBBY ====================
+        /// <summary>
+        /// Host kết nối vào game session (sau khi tạo)
+        /// </summary>
+        public async Task<bool> HostConnectAsync(string gamePin, string connectionId)
         {
-            if (!_gameRooms.TryGetValue(joinDto.RoomId, out var room))
+            if (!_gameSessions.TryGetValue(gamePin, out var session))
                 return false;
 
-            if (room.Status != GameRoomStatus.Waiting)
+            session.HostConnectionId = connectionId;
+            _logger.LogInformation($"Host connected to game {gamePin}");
+            return true;
+        }
+
+        /// <summary>
+        /// Player join vào lobby bằng Game PIN
+        /// </summary>
+        public async Task<PlayerInfo?> PlayerJoinAsync(string gamePin, string playerName, string connectionId)
+        {
+            if (!_gameSessions.TryGetValue(gamePin, out var session))
+                return null;
+
+            if (session.Status != GameStatus.Lobby)
+                return null; // Chỉ join được khi đang ở lobby
+
+            // Check duplicate name
+            if (session.Players.Any(p => p.PlayerName.Equals(playerName, StringComparison.OrdinalIgnoreCase)))
+                return null;
+
+            var player = new PlayerInfo
+            {
+                ConnectionId = connectionId,
+                PlayerName = playerName,
+                Score = 0,
+                JoinedAt = DateTime.UtcNow
+            };
+
+            session.Players.Add(player);
+            _logger.LogInformation($"Player '{playerName}' joined game {gamePin}. Total players: {session.Players.Count}");
+
+            return player;
+        }
+
+        /// <summary>
+        /// Player rời lobby
+        /// </summary>
+        public async Task<bool> PlayerLeaveAsync(string gamePin, string connectionId)
+        {
+            if (!_gameSessions.TryGetValue(gamePin, out var session))
                 return false;
 
-            if (room.GuestUserId.HasValue)
-                return false; // Room is full
+            var player = session.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
+            if (player == null)
+                return false;
 
-            // Update room with guest user
-            room.GuestUserId = joinDto.UserId;
-            room.GuestUserName = joinDto.UserName;
-            _gameRooms[joinDto.RoomId] = room;
+            session.Players.Remove(player);
+            _logger.LogInformation($"Player '{player.PlayerName}' left game {gamePin}");
 
             return true;
         }
 
-        // Leave phòng game
-        public async Task<bool> LeaveGameRoomAsync(LeaveGameDto leaveDto)
+        /// <summary>
+        /// Lấy thông tin lobby (số người chơi, v.v.)
+        /// </summary>
+        public async Task<GameSessionDto?> GetGameSessionAsync(string gamePin)
         {
-            if (!_gameRooms.TryGetValue(leaveDto.RoomId, out var room))
-                return false;
-
-            // If host leaves, cancel the room
-            if (room.HostUserId == leaveDto.UserId)
-            {
-                room.Status = GameRoomStatus.Cancelled;
-                _gameRooms[leaveDto.RoomId] = room;
-                return true;
-            }
-
-            // If guest leaves, remove guest
-            if (room.GuestUserId == leaveDto.UserId)
-            {
-                room.GuestUserId = null;
-                room.GuestUserName = null;
-                _gameRooms[leaveDto.RoomId] = room;
-                return true;
-            }
-
-            return false;
+            _gameSessions.TryGetValue(gamePin, out var session);
+            return session;
         }
 
-        // Start game
-        public async Task<bool> StartGameAsync(StartGameDto startDto)
+        // ==================== START GAME ====================
+        /// <summary>
+        /// Host start game - chuyển sang câu hỏi đầu tiên
+        /// </summary>
+        public async Task<QuestionDto?> StartGameAsync(string gamePin, Action<string> onQuestionTimeout)
         {
-            if (!_gameRooms.TryGetValue(startDto.RoomId, out var room))
-                return false;
-
-            if (room.HostUserId != startDto.UserId)
-                return false; // Only host can start the game
-
-            if (!room.GuestUserId.HasValue)
-                return false; // Need a guest to start
-
-            room.Status = GameRoomStatus.InProgress;
-            _gameRooms[startDto.RoomId] = room;
-
-            return true;
-        }
-
-        // Submit answer
-        public async Task<bool> SubmitAnswerAsync(SubmitAnswerDto answerDto)
-        {
-            if (!_gameRooms.TryGetValue(answerDto.RoomId, out var room))
-                return false;
-
-            if (room.Status != GameRoomStatus.InProgress)
-                return false;
-
-            // Add answer to room answers
-            var answers = _roomAnswers.GetOrAdd(answerDto.RoomId, new List<SubmitAnswerDto>());
-            answers.Add(answerDto);
-
-            // Check if both players have answered all questions
-            var hostAnswers = answers.Count(a => a.UserId == room.HostUserId);
-            var guestAnswers = answers.Count(a => a.UserId == room.GuestUserId);
-            var totalQuestions = _roomQuestions.GetValueOrDefault(answerDto.RoomId, new List<GameQuestionDto>()).Count;
-
-            if (hostAnswers == guestAnswers && hostAnswers == totalQuestions)
-            {
-                // Game completed
-                room.Status = GameRoomStatus.Completed;
-                _gameRooms[answerDto.RoomId] = room;
-            }
-
-            return true;
-        }
-
-        // Get next question
-        public async Task<GameQuestionDto?> GetNextQuestionAsync(string roomId, int userId)
-        {
-            if (!_roomQuestions.TryGetValue(roomId, out var questions))
+            if (!_gameSessions.TryGetValue(gamePin, out var session))
                 return null;
 
-            if (!_gameRooms.TryGetValue(roomId, out var room))
+            if (session.Status != GameStatus.Lobby)
                 return null;
 
-            if (room.Status != GameRoomStatus.InProgress)
-                return null;
+            if (session.Players.Count == 0)
+                return null; // Cần ít nhất 1 player
 
-            // Get current question index based on answered questions
-            var answers = _roomAnswers.GetValueOrDefault(roomId, new List<SubmitAnswerDto>());
-            var answeredCount = answers.Count(a => a.UserId == userId);
+            session.Status = GameStatus.InProgress;
+            session.CurrentQuestionIndex = 0;
+            session.QuestionStartedAt = DateTime.UtcNow;
+            session.CurrentAnswers.Clear();
 
-            if (answeredCount >= questions.Count)
-                return null; // All questions answered
+            var question = session.Questions[0];
 
-            var question = questions[answeredCount];
-            question.QuestionNumber = answeredCount + 1;
-            question.TotalQuestions = questions.Count;
+            // Start timer trên server
+            StartQuestionTimer(gamePin, session.TimePerQuestion, onQuestionTimeout);
+
+            _logger.LogInformation($"Game {gamePin} started with {session.Players.Count} players");
 
             return question;
         }
 
-        // Get game result
-        public async Task<GameResultDto?> GetGameResultAsync(string roomId)
+        // ==================== SUBMIT ANSWER ====================
+        /// <summary>
+        /// Player submit câu trả lời
+        /// </summary>
+        public async Task<bool> SubmitAnswerAsync(string gamePin, string connectionId, Guid questionId, Guid answerId)
         {
-            if (!_gameRooms.TryGetValue(roomId, out var room))
-                return null;
+            if (!_gameSessions.TryGetValue(gamePin, out var session))
+                return false;
 
-            if (room.Status != GameRoomStatus.Completed)
-                return null;
+            if (session.Status != GameStatus.InProgress)
+                return false; // Chỉ submit được khi đang InProgress
 
-            var answers = _roomAnswers.GetValueOrDefault(roomId, new List<SubmitAnswerDto>());
-            var questions = _roomQuestions.GetValueOrDefault(roomId, new List<GameQuestionDto>());
+            if (!session.QuestionStartedAt.HasValue)
+                return false;
 
-            // Calculate scores
-            var hostScore = CalculateScore(room.HostUserId, answers, questions);
-            var guestScore = CalculateScore(room.GuestUserId, answers, questions);
+            var player = session.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
+            if (player == null)
+                return false;
 
-            var result = new GameResultDto
+            // Check nếu đã submit rồi
+            if (session.CurrentAnswers.ContainsKey(connectionId))
+                return false; // Không cho submit lại
+
+            // Check thời gian
+            var timeSpent = (DateTime.UtcNow - session.QuestionStartedAt.Value).TotalSeconds;
+            if (timeSpent > session.TimePerQuestion)
+                return false; // Hết giờ rồi
+
+            // Check đáp án đúng
+            bool isCorrect = false;
+            if (_correctAnswers.TryGetValue(gamePin, out var correctMap))
             {
-                RoomId = roomId,
-                HostUserId = room.HostUserId,
-                HostUserName = room.HostUserName,
-                HostScore = hostScore,
-                GuestUserId = room.GuestUserId,
-                GuestUserName = room.GuestUserName,
-                GuestScore = guestScore,
-                WinnerUserId = hostScore > guestScore ? room.HostUserId : room.GuestUserId ?? 0,
-                WinnerUserName = hostScore > guestScore ? room.HostUserName : room.GuestUserName,
-                CompletedAt = DateTime.UtcNow
-            };
-
-            return result;
-        }
-
-        // Get room info
-        public async Task<GameRoomInfoDto?> GetGameRoomInfoAsync(string roomId)
-        {
-            _gameRooms.TryGetValue(roomId, out var room);
-            return room;
-        }
-
-        // Get available rooms
-        public async Task<List<GameRoomInfoDto>> GetAvailableRoomsAsync()
-        {
-            return _gameRooms.Values
-                .Where(r => r.Status == GameRoomStatus.Waiting && !r.GuestUserId.HasValue)
-                .OrderByDescending(r => r.CreatedAt)
-                .ToList();
-        }
-
-        // Connection management
-        public async Task AddConnectionAsync(string connectionId, int userId)
-        {
-            _userConnections[connectionId] = userId.ToString();
-        }
-
-        public async Task RemoveConnectionAsync(string connectionId)
-        {
-            _userConnections.TryRemove(connectionId, out _);
-        }
-
-        public async Task<string?> GetConnectionIdAsync(int userId)
-        {
-            var connection = _userConnections.FirstOrDefault(x => x.Value == userId.ToString());
-            return connection.Key;
-        }
-
-        public async Task<int?> GetUserIdByConnectionIdAsync(string connectionId)
-        {
-            if (_userConnections.TryGetValue(connectionId, out var userIdStr) && 
-                int.TryParse(userIdStr, out var userId))
-                return userId;
-            return null;
-        }
-
-        // Private methods
-        private async Task LoadQuestionsForRoomAsync(string roomId, int quizSetId)
-        {
-            var quizzes = await _quizRepository.GetQuizzesByQuizSetIdAsync(new Guid(quizSetId.ToString()));
-            var questions = new List<GameQuestionDto>();
-
-            foreach (var quiz in quizzes)
-            {
-                var answerOptions = await _answerOptionRepository.GetByQuizIdAsync(quiz.Id);
-                
-                var question = new GameQuestionDto
-                {
-                    QuestionId = quiz.Id.GetHashCode(), // Convert Guid to int
-                    QuestionText = quiz.QuestionText,
-                    TimeLimit = 30, // Default time limit
-                    AnswerOptions = answerOptions.Select(ao => new GameAnswerOptionDto
-                    {
-                        Id = ao.Id.GetHashCode(), // Convert Guid to int
-                        OptionText = ao.OptionText,
-                        IsCorrect = ao.IsCorrect
-                    }).ToList()
-                };
-
-                questions.Add(question);
+                isCorrect = correctMap.GetValueOrDefault(answerId, false);
             }
 
-            _roomQuestions[roomId] = questions;
+            // Tính điểm: 1000 điểm cơ bản + bonus theo thời gian
+            // Nếu trả lời nhanh hơn = điểm cao hơn (Kahoot style)
+            int points = 0;
+            if (isCorrect)
+            {
+                double timeRatio = 1.0 - (timeSpent / session.TimePerQuestion);
+                points = (int)(1000 + (timeRatio * 500)); // Tối đa 1500 điểm
+            }
+
+            var answer = new PlayerAnswer
+            {
+                ConnectionId = connectionId,
+                PlayerName = player.PlayerName,
+                QuestionId = questionId,
+                AnswerId = answerId,
+                TimeSpent = timeSpent,
+                IsCorrect = isCorrect,
+                PointsEarned = points,
+                SubmittedAt = DateTime.UtcNow
+            };
+
+            session.CurrentAnswers[connectionId] = answer;
+
+            // Cập nhật điểm của player
+            player.Score += points;
+
+            _logger.LogInformation($"Player '{player.PlayerName}' submitted answer for question {questionId}. Correct: {isCorrect}, Points: {points}");
+
+            return true;
         }
 
-        private int CalculateScore(int? userId, List<SubmitAnswerDto> answers, List<GameQuestionDto> questions)
+        // ==================== QUESTION TIMEOUT & SHOW RESULT ====================
+        /// <summary>
+        /// Xử lý khi hết giờ - trả về kết quả câu hỏi
+        /// </summary>
+        public async Task<GameAnswerResultDto?> GetQuestionResultAsync(string gamePin)
         {
-            if (!userId.HasValue) return 0;
+            if (!_gameSessions.TryGetValue(gamePin, out var session))
+                return null;
 
-            var userAnswers = answers.Where(a => a.UserId == userId.Value).ToList();
-            var score = 0;
+            var currentQuestion = session.Questions[session.CurrentQuestionIndex];
 
-            foreach (var answer in userAnswers)
+            // Tìm đáp án đúng
+            Guid correctAnswerId = Guid.Empty;
+            string correctAnswerText = string.Empty;
+
+            if (_correctAnswers.TryGetValue(gamePin, out var correctMap))
             {
-                var question = questions.FirstOrDefault(q => q.QuestionId == answer.QuestionId);
-                if (question != null)
+                foreach (var option in currentQuestion.AnswerOptions)
                 {
-                    var correctOption = question.AnswerOptions.FirstOrDefault(ao => ao.IsCorrect);
-                    if (correctOption != null && correctOption.Id == answer.AnswerOptionId)
+                    if (correctMap.GetValueOrDefault(option.AnswerId, false))
                     {
-                        // Calculate points based on time spent (faster = more points)
-                        var timeBonus = Math.Max(0, 10 - (int)answer.TimeSpent);
-                        score += 10 + timeBonus;
+                        correctAnswerId = option.AnswerId;
+                        correctAnswerText = option.OptionText;
+                        break;
                     }
                 }
             }
 
-            return score;
+            // Thống kê đáp án
+            var answerStats = new Dictionary<Guid, int>();
+            foreach (var option in currentQuestion.AnswerOptions)
+            {
+                answerStats[option.AnswerId] = 0;
+            }
+
+            var playerResults = new List<PlayerAnswerResult>();
+
+            foreach (var answer in session.CurrentAnswers.Values)
+            {
+                if (answerStats.ContainsKey(answer.AnswerId))
+                {
+                    answerStats[answer.AnswerId]++;
+                }
+
+                playerResults.Add(new PlayerAnswerResult
+                {
+                    PlayerName = answer.PlayerName,
+                    IsCorrect = answer.IsCorrect,
+                    PointsEarned = answer.PointsEarned,
+                    TimeSpent = answer.TimeSpent
+                });
+            }
+
+            session.Status = GameStatus.ShowingResult;
+
+            return new GameAnswerResultDto
+            {
+                QuestionId = currentQuestion.QuestionId,
+                CorrectAnswerId = correctAnswerId,
+                CorrectAnswerText = correctAnswerText,
+                AnswerStats = answerStats,
+                PlayerResults = playerResults
+            };
+        }
+
+        // ==================== LEADERBOARD & NEXT QUESTION ====================
+        /// <summary>
+        /// Lấy leaderboard hiện tại
+        /// </summary>
+        public async Task<LeaderboardDto?> GetLeaderboardAsync(string gamePin)
+        {
+            if (!_gameSessions.TryGetValue(gamePin, out var session))
+                return null;
+
+            var rankings = session.Players
+                .OrderByDescending(p => p.Score)
+                .Select((p, index) => new PlayerScore
+                {
+                    PlayerName = p.PlayerName,
+                    TotalScore = p.Score,
+                    CorrectAnswers = 0, // TODO: Track this
+                    Rank = index + 1
+                })
+                .ToList();
+
+            session.Status = GameStatus.ShowingLeaderboard;
+
+            return new LeaderboardDto
+            {
+                Rankings = rankings,
+                CurrentQuestion = session.CurrentQuestionIndex + 1,
+                TotalQuestions = session.Questions.Count
+            };
+        }
+
+        /// <summary>
+        /// Host chuyển sang câu hỏi tiếp theo
+        /// </summary>
+        public async Task<QuestionDto?> NextQuestionAsync(string gamePin, Action<string> onQuestionTimeout)
+        {
+            if (!_gameSessions.TryGetValue(gamePin, out var session))
+                return null;
+
+            session.CurrentQuestionIndex++;
+
+            // Check nếu hết câu hỏi
+            if (session.CurrentQuestionIndex >= session.Questions.Count)
+            {
+                session.Status = GameStatus.Completed;
+                return null; // Hết câu hỏi
+            }
+
+            session.Status = GameStatus.InProgress;
+            session.QuestionStartedAt = DateTime.UtcNow;
+            session.CurrentAnswers.Clear();
+
+            var question = session.Questions[session.CurrentQuestionIndex];
+
+            // Start timer trên server
+            StartQuestionTimer(gamePin, session.TimePerQuestion, onQuestionTimeout);
+
+            _logger.LogInformation($"Game {gamePin} moved to question {session.CurrentQuestionIndex + 1}");
+
+            return question;
+        }
+
+        // ==================== GAME END ====================
+        /// <summary>
+        /// Lấy kết quả cuối cùng khi game kết thúc
+        /// </summary>
+        public async Task<FinalResultDto?> GetFinalResultAsync(string gamePin)
+        {
+            if (!_gameSessions.TryGetValue(gamePin, out var session))
+                return null;
+
+            if (session.Status != GameStatus.Completed)
+                return null;
+
+            var rankings = session.Players
+                .OrderByDescending(p => p.Score)
+                .Select((p, index) => new PlayerScore
+                {
+                    PlayerName = p.PlayerName,
+                    TotalScore = p.Score,
+                    CorrectAnswers = 0, // TODO: Track this
+                    Rank = index + 1
+                })
+                .ToList();
+
+            var winner = rankings.FirstOrDefault();
+
+            return new FinalResultDto
+            {
+                GamePin = gamePin,
+                FinalRankings = rankings,
+                Winner = winner,
+                CompletedAt = DateTime.UtcNow,
+                TotalPlayers = session.Players.Count,
+                TotalQuestions = session.Questions.Count
+            };
+        }
+
+        /// <summary>
+        /// Cleanup game session sau khi kết thúc
+        /// </summary>
+        public async Task CleanupGameAsync(string gamePin)
+        {
+            // Stop timer nếu đang chạy
+            if (_questionTimers.TryRemove(gamePin, out var timer))
+            {
+                timer.Dispose();
+            }
+
+            _gameSessions.TryRemove(gamePin, out _);
+            _correctAnswers.TryRemove(gamePin, out _);
+
+            _logger.LogInformation($"Game {gamePin} cleaned up");
+        }
+
+        // ==================== TIMER MANAGEMENT ====================
+        /// <summary>
+        /// Start timer trên server - SOURCE OF TRUTH
+        /// </summary>
+        private void StartQuestionTimer(string gamePin, int seconds, Action<string> onTimeout)
+        {
+            // Stop existing timer nếu có
+            if (_questionTimers.TryRemove(gamePin, out var existingTimer))
+            {
+                existingTimer.Dispose();
+            }
+
+            // Create new timer
+            var timer = new Timer(_ =>
+            {
+                _logger.LogInformation($"Question timer expired for game {gamePin}");
+                onTimeout(gamePin);
+
+                // Dispose timer sau khi chạy
+                if (_questionTimers.TryRemove(gamePin, out var t))
+                {
+                    t.Dispose();
+                }
+            }, null, TimeSpan.FromSeconds(seconds), Timeout.InfiniteTimeSpan);
+
+            _questionTimers[gamePin] = timer;
+        }
+
+        // ==================== CONNECTION MANAGEMENT ====================
+        /// <summary>
+        /// Xử lý khi player disconnect
+        /// </summary>
+        public async Task<PlayerInfo?> HandleDisconnectAsync(string connectionId)
+        {
+            // Tìm player trong tất cả các game
+            foreach (var session in _gameSessions.Values)
+            {
+                var player = session.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
+                if (player != null)
+                {
+                    session.Players.Remove(player);
+                    _logger.LogInformation($"Player '{player.PlayerName}' disconnected from game {session.GamePin}");
+                    return player;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// Tìm game PIN từ connection ID
+        /// </summary>
+        public async Task<string?> GetGamePinByConnectionAsync(string connectionId)
+        {
+            foreach (var session in _gameSessions.Values)
+            {
+                if (session.HostConnectionId == connectionId || 
+                    session.Players.Any(p => p.ConnectionId == connectionId))
+                {
+                    return session.GamePin;
+                }
+            }
+
+            return null;
         }
     }
 }
