@@ -31,3 +31,8 @@ Thumbs.db
 # Test files or local settings
 appsettings.json
 appsettings.Development.json
+**/appsettings.json
+
+# Ignore all env files in any folder
+.env
+**/.env
