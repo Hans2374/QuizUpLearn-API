@@ -67,5 +67,12 @@ namespace QuizUpLearn.API.Controllers
             if (!ok) return NotFound();
             return Ok();
         }
+
+        [HttpPost("submit")]
+        public async Task<IActionResult> SubmitAnswers([FromBody] RequestSubmitAnswersDto dto)
+        {
+            var result = await _service.SubmitAnswersAsync(dto);
+            return Ok(result);
+        }
     }
 }
