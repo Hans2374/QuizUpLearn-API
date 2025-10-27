@@ -5,6 +5,10 @@ using System.Security.Claims;
 
 namespace QuizUpLearn.API.Hubs
 {
+    /// <summary>
+    /// Kahoot-style Quiz Game Hub
+    /// Flow: Host tạo game → Players join lobby → Host start → Show questions → Show results → Leaderboard → Next/End
+    /// </summary>
     public class GameHub : Hub
     {
         private readonly RealtimeGameService _gameService;
@@ -16,307 +20,379 @@ namespace QuizUpLearn.API.Hubs
             _logger = logger;
         }
 
+        // ==================== CONNECTION LIFECYCLE ====================
         public override async Task OnConnectedAsync()
         {
-            try
-            {
-                var userId = GetUserIdFromContext();
-                if (userId.HasValue)
-                {
-                    await _gameService.AddConnectionAsync(Context.ConnectionId, userId.Value);
-                    _logger.LogInformation($"User {userId} connected with connection {Context.ConnectionId}");
-                }
-                await base.OnConnectedAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in OnConnectedAsync");
-                throw;
-            }
+            _logger.LogInformation($"Client connected: {Context.ConnectionId}");
+            await base.OnConnectedAsync();
         }
 
         public override async Task OnDisconnectedAsync(Exception? exception)
         {
             try
             {
-                var userId = await _gameService.GetUserIdByConnectionIdAsync(Context.ConnectionId);
-                if (userId.HasValue)
+                // Tìm xem connection này thuộc game nào
+                var gamePin = await _gameService.GetGamePinByConnectionAsync(Context.ConnectionId);
+                if (gamePin != null)
                 {
-                    await _gameService.RemoveConnectionAsync(Context.ConnectionId);
-                    _logger.LogInformation($"User {userId} disconnected from connection {Context.ConnectionId}");
+                    var player = await _gameService.HandleDisconnectAsync(Context.ConnectionId);
+                    if (player != null)
+                    {
+                        // Thông báo cho Host
+                        await Clients.Group($"Game_{gamePin}").SendAsync("PlayerDisconnected", new
+                        {
+                            PlayerName = player.PlayerName,
+                            ConnectionId = Context.ConnectionId,
+                            Timestamp = DateTime.UtcNow
+                        });
+                    }
                 }
-                await base.OnDisconnectedAsync(exception);
+
+                _logger.LogInformation($"Client disconnected: {Context.ConnectionId}");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in OnDisconnectedAsync");
-                throw;
             }
+
+            await base.OnDisconnectedAsync(exception);
         }
 
-        // Join a game room
-        public async Task JoinRoom(string roomId)
+        // ==================== HOST CONNECTS TO GAME ====================
+        /// <summary>
+        /// Host kết nối vào game sau khi tạo (qua API)
+        /// </summary>
+        public async Task HostConnect(string gamePin)
         {
             try
             {
-                var userId = GetUserIdFromContext();
-                if (!userId.HasValue)
+                var success = await _gameService.HostConnectAsync(gamePin, Context.ConnectionId);
+                if (!success)
                 {
-                    await Clients.Caller.SendAsync("Error", "User not authenticated");
+                    await Clients.Caller.SendAsync("Error", "Game not found");
                     return;
                 }
 
-                var roomInfo = await _gameService.GetGameRoomInfoAsync(roomId);
-                if (roomInfo == null)
+                // Add Host vào SignalR Group
+                await Groups.AddToGroupAsync(Context.ConnectionId, $"Game_{gamePin}");
+
+                _logger.LogInformation($"Host connected to game {gamePin}");
+
+                await Clients.Caller.SendAsync("HostConnected", new
                 {
-                    await Clients.Caller.SendAsync("Error", "Room not found");
+                    GamePin = gamePin,
+                    Message = "Successfully connected as Host"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in HostConnect for game {gamePin}");
+                await Clients.Caller.SendAsync("Error", "Failed to connect as Host");
+            }
+        }
+
+        // ==================== LOBBY (WAITING ROOM) ====================
+        /// <summary>
+        /// Player join vào lobby bằng Game PIN
+        /// </summary>
+        public async Task JoinGame(string gamePin, string playerName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(playerName))
+                {
+                    await Clients.Caller.SendAsync("Error", "Player name is required");
                     return;
                 }
 
-                // Add user to SignalR group
-                await Groups.AddToGroupAsync(Context.ConnectionId, roomId);
-
-                // Join the game room
-                var joinDto = new JoinGameRoomDto
+                var player = await _gameService.PlayerJoinAsync(gamePin, playerName.Trim(), Context.ConnectionId);
+                if (player == null)
                 {
-                    RoomId = roomId,
-                    UserId = userId.Value,
-                    UserName = GetUserNameFromContext()
-                };
+                    await Clients.Caller.SendAsync("Error", "Failed to join game. Game not found, already started, or name taken.");
+                    return;
+                }
 
-                var success = await _gameService.JoinGameRoomAsync(joinDto);
-                if (success)
+                // Add Player vào SignalR Group
+                await Groups.AddToGroupAsync(Context.ConnectionId, $"Game_{gamePin}");
+
+                _logger.LogInformation($"Player '{playerName}' joined game {gamePin}");
+
+                // Gửi cho Player xác nhận đã join
+                await Clients.Caller.SendAsync("JoinedGame", new
                 {
-                    // Notify all users in the room
-                    await Clients.Group(roomId).SendAsync("PlayerJoined", new
+                    GamePin = gamePin,
+                    PlayerName = playerName,
+                    Message = "Successfully joined the game"
+                });
+
+                // Thông báo cho tất cả (kể cả Host) có người mới join
+                await Clients.Group($"Game_{gamePin}").SendAsync("PlayerJoined", player);
+
+                // Gửi lobby info cập nhật
+                var session = await _gameService.GetGameSessionAsync(gamePin);
+                if (session != null)
+                {
+                    await Clients.Group($"Game_{gamePin}").SendAsync("LobbyUpdated", new
                     {
-                        UserId = userId.Value,
-                        UserName = joinDto.UserName,
-                        RoomId = roomId,
-                        Timestamp = DateTime.UtcNow
+                        TotalPlayers = session.Players.Count,
+                        Players = session.Players.Select(p => p.PlayerName).ToList()
                     });
-
-                    // Send updated room info
-                    var updatedRoomInfo = await _gameService.GetGameRoomInfoAsync(roomId);
-                    await Clients.Group(roomId).SendAsync("RoomUpdated", updatedRoomInfo);
-                }
-                else
-                {
-                    await Clients.Caller.SendAsync("Error", "Failed to join room");
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in JoinRoom");
-                await Clients.Caller.SendAsync("Error", "An error occurred while joining the room");
+                _logger.LogError(ex, $"Error in JoinGame for game {gamePin}");
+                await Clients.Caller.SendAsync("Error", "An error occurred while joining the game");
             }
         }
 
-        // Leave a game room
-        public async Task LeaveRoom(string roomId)
+        /// <summary>
+        /// Player rời lobby (trước khi game start)
+        /// </summary>
+        public async Task LeaveGame(string gamePin)
         {
             try
             {
-                var userId = GetUserIdFromContext();
-                if (!userId.HasValue)
-                {
-                    await Clients.Caller.SendAsync("Error", "User not authenticated");
-                    return;
-                }
-
-                // Remove user from SignalR group
-                await Groups.RemoveFromGroupAsync(Context.ConnectionId, roomId);
-
-                // Leave the game room
-                var leaveDto = new LeaveGameDto
-                {
-                    RoomId = roomId,
-                    UserId = userId.Value
-                };
-
-                var success = await _gameService.LeaveGameRoomAsync(leaveDto);
+                var success = await _gameService.PlayerLeaveAsync(gamePin, Context.ConnectionId);
                 if (success)
                 {
-                    // Notify all users in the room
-                    await Clients.Group(roomId).SendAsync("PlayerLeft", new
+                    await Groups.RemoveFromGroupAsync(Context.ConnectionId, $"Game_{gamePin}");
+
+                    await Clients.Group($"Game_{gamePin}").SendAsync("PlayerLeft", new
                     {
-                        UserId = userId.Value,
-                        RoomId = roomId,
+                        ConnectionId = Context.ConnectionId,
                         Timestamp = DateTime.UtcNow
                     });
 
-                    // Send updated room info
-                    var updatedRoomInfo = await _gameService.GetGameRoomInfoAsync(roomId);
-                    await Clients.Group(roomId).SendAsync("RoomUpdated", updatedRoomInfo);
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in LeaveRoom");
-                await Clients.Caller.SendAsync("Error", "An error occurred while leaving the room");
-            }
-        }
-
-        // Start the game
-        public async Task StartGame(string roomId)
-        {
-            try
-            {
-                var userId = GetUserIdFromContext();
-                if (!userId.HasValue)
-                {
-                    await Clients.Caller.SendAsync("Error", "User not authenticated");
-                    return;
-                }
-
-                var startDto = new StartGameDto
-                {
-                    RoomId = roomId,
-                    UserId = userId.Value
-                };
-
-                var success = await _gameService.StartGameAsync(startDto);
-                if (success)
-                {
-                    // Notify all users in the room
-                    await Clients.Group(roomId).SendAsync("GameStarted", new
+                    // Gửi lobby info cập nhật
+                    var session = await _gameService.GetGameSessionAsync(gamePin);
+                    if (session != null)
                     {
-                        RoomId = roomId,
-                        Timestamp = DateTime.UtcNow
-                    });
-
-                    // Send first question to both players
-                    var hostQuestion = await _gameService.GetNextQuestionAsync(roomId, userId.Value);
-                    var guestUserId = (await _gameService.GetGameRoomInfoAsync(roomId))?.GuestUserId;
-                    
-                    if (hostQuestion != null)
-                    {
-                        await Clients.Caller.SendAsync("QuestionReceived", hostQuestion);
-                    }
-
-                    if (guestUserId.HasValue)
-                    {
-                        var guestQuestion = await _gameService.GetNextQuestionAsync(roomId, guestUserId.Value);
-                        if (guestQuestion != null)
+                        await Clients.Group($"Game_{gamePin}").SendAsync("LobbyUpdated", new
                         {
-                            var guestConnectionId = await _gameService.GetConnectionIdAsync(guestUserId.Value);
-                            if (!string.IsNullOrEmpty(guestConnectionId))
-                            {
-                                await Clients.Client(guestConnectionId).SendAsync("QuestionReceived", guestQuestion);
-                            }
-                        }
+                            TotalPlayers = session.Players.Count,
+                            Players = session.Players.Select(p => p.PlayerName).ToList()
+                        });
                     }
                 }
-                else
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in LeaveGame for game {gamePin}");
+            }
+        }
+
+        // ==================== START GAME ====================
+        /// <summary>
+        /// Host bắt đầu game (chỉ Host mới gọi được)
+        /// </summary>
+        public async Task StartGame(string gamePin)
+        {
+            try
+            {
+                var question = await _gameService.StartGameAsync(gamePin, OnQuestionTimeout);
+                if (question == null)
                 {
                     await Clients.Caller.SendAsync("Error", "Failed to start game");
+                    return;
                 }
+
+                _logger.LogInformation($"Game {gamePin} started");
+
+                // Gửi tín hiệu "GameStarted" cho tất cả
+                await Clients.Group($"Game_{gamePin}").SendAsync("GameStarted", new
+                {
+                    GamePin = gamePin,
+                    TotalQuestions = question.TotalQuestions,
+                    Timestamp = DateTime.UtcNow
+                });
+
+                // Đợi 3 giây (countdown) rồi gửi câu hỏi đầu tiên
+                await Task.Delay(3000);
+
+                await Clients.Group($"Game_{gamePin}").SendAsync("ShowQuestion", question);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in StartGame");
+                _logger.LogError(ex, $"Error in StartGame for game {gamePin}");
                 await Clients.Caller.SendAsync("Error", "An error occurred while starting the game");
             }
         }
 
-        // Submit an answer
-        public async Task SubmitAnswer(string roomId, int questionId, int answerOptionId, double timeSpent)
+        // ==================== SUBMIT ANSWER ====================
+        /// <summary>
+        /// Player submit câu trả lời
+        /// </summary>
+        public async Task SubmitAnswer(string gamePin, string questionId, string answerId)
         {
             try
             {
-                var userId = GetUserIdFromContext();
-                if (!userId.HasValue)
+                if (!Guid.TryParse(questionId, out var questionGuid) || !Guid.TryParse(answerId, out var answerGuid))
                 {
-                    await Clients.Caller.SendAsync("Error", "User not authenticated");
+                    await Clients.Caller.SendAsync("Error", "Invalid question or answer ID");
                     return;
                 }
 
-                var answerDto = new SubmitAnswerDto
+                var success = await _gameService.SubmitAnswerAsync(gamePin, Context.ConnectionId, questionGuid, answerGuid);
+                if (!success)
                 {
-                    RoomId = roomId,
-                    UserId = userId.Value,
-                    QuestionId = questionId,
-                    AnswerOptionId = answerOptionId,
-                    TimeSpent = timeSpent
-                };
+                    await Clients.Caller.SendAsync("Error", "Failed to submit answer. Time may have expired or already answered.");
+                    return;
+                }
 
-                var success = await _gameService.SubmitAnswerAsync(answerDto);
-                if (success)
+                // Gửi xác nhận cho player
+                await Clients.Caller.SendAsync("AnswerSubmitted", new
                 {
-                    // Notify that an answer was submitted
-                    await Clients.Group(roomId).SendAsync("AnswerSubmitted", new
+                    QuestionId = questionGuid,
+                    AnswerId = answerGuid,
+                    Timestamp = DateTime.UtcNow
+                });
+
+                // (Optional) Thông báo cho Host số người đã submit
+                var session = await _gameService.GetGameSessionAsync(gamePin);
+                if (session != null)
+                {
+                    await Clients.Group($"Game_{gamePin}").SendAsync("AnswerCount", new
                     {
-                        UserId = userId.Value,
-                        QuestionId = questionId,
-                        RoomId = roomId,
-                        Timestamp = DateTime.UtcNow
+                        Submitted = session.CurrentAnswers.Count,
+                        Total = session.Players.Count
                     });
-
-                    // Check if game is completed
-                    var roomInfo = await _gameService.GetGameRoomInfoAsync(roomId);
-                    if (roomInfo?.Status == GameRoomStatus.Completed)
-                    {
-                        var gameResult = await _gameService.GetGameResultAsync(roomId);
-                        if (gameResult != null)
-                        {
-                            await Clients.Group(roomId).SendAsync("GameEnded", gameResult);
-                        }
-                    }
-                }
-                else
-                {
-                    await Clients.Caller.SendAsync("Error", "Failed to submit answer");
                 }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in SubmitAnswer");
-                await Clients.Caller.SendAsync("Error", "An error occurred while submitting the answer");
+                _logger.LogError(ex, $"Error in SubmitAnswer for game {gamePin}");
+                await Clients.Caller.SendAsync("Error", "An error occurred while submitting answer");
             }
         }
 
-        // Get next question
-        public async Task GetNextQuestion(string roomId)
+        // ==================== QUESTION TIMEOUT ====================
+        /// <summary>
+        /// Callback khi Timer hết giờ (gọi từ service)
+        /// </summary>
+        private async void OnQuestionTimeout(string gamePin)
         {
             try
             {
-                var userId = GetUserIdFromContext();
-                if (!userId.HasValue)
+                var result = await _gameService.GetQuestionResultAsync(gamePin);
+                if (result == null)
                 {
-                    await Clients.Caller.SendAsync("Error", "User not authenticated");
+                    _logger.LogWarning($"Failed to get question result for game {gamePin}");
                     return;
                 }
 
-                var question = await _gameService.GetNextQuestionAsync(roomId, userId.Value);
-                if (question != null)
-                {
-                    await Clients.Caller.SendAsync("QuestionReceived", question);
-                }
-                else
-                {
-                    await Clients.Caller.SendAsync("NoMoreQuestions", new { RoomId = roomId });
-                }
+                _logger.LogInformation($"Question timeout for game {gamePin}. Showing results.");
+
+                // Gửi kết quả cho tất cả
+                await Clients.Group($"Game_{gamePin}").SendAsync("ShowAnswerResult", result);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error in GetNextQuestion");
-                await Clients.Caller.SendAsync("Error", "An error occurred while getting the next question");
+                _logger.LogError(ex, $"Error in OnQuestionTimeout for game {gamePin}");
             }
         }
 
-        private int? GetUserIdFromContext()
+        // ==================== NEXT QUESTION ====================
+        /// <summary>
+        /// Host chuyển sang câu tiếp theo (sau khi xem kết quả)
+        /// </summary>
+        public async Task NextQuestion(string gamePin)
         {
-            var userIdClaim = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (int.TryParse(userIdClaim, out var userId))
+            try
             {
-                return userId;
+                // Hiển thị leaderboard trước
+                var leaderboard = await _gameService.GetLeaderboardAsync(gamePin);
+                if (leaderboard == null)
+                {
+                    await Clients.Caller.SendAsync("Error", "Failed to get leaderboard");
+                    return;
+                }
+
+                await Clients.Group($"Game_{gamePin}").SendAsync("ShowLeaderboard", leaderboard);
+
+                // Đợi 5 giây để xem leaderboard
+                await Task.Delay(5000);
+
+                // Lấy câu hỏi tiếp theo
+                var nextQuestion = await _gameService.NextQuestionAsync(gamePin, OnQuestionTimeout);
+
+                if (nextQuestion == null)
+                {
+                    // Hết câu hỏi → Kết thúc game
+                    await EndGame(gamePin);
+                    return;
+                }
+
+                _logger.LogInformation($"Game {gamePin} moved to next question");
+
+                // Gửi câu hỏi tiếp theo
+                await Clients.Group($"Game_{gamePin}").SendAsync("ShowQuestion", nextQuestion);
             }
-            return null;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in NextQuestion for game {gamePin}");
+                await Clients.Caller.SendAsync("Error", "An error occurred while moving to next question");
+            }
         }
 
-        private string? GetUserNameFromContext()
+        // ==================== GAME END ====================
+        /// <summary>
+        /// Kết thúc game và hiển thị kết quả cuối cùng
+        /// </summary>
+        private async Task EndGame(string gamePin)
         {
-            return Context.User?.FindFirst(ClaimTypes.Name)?.Value;
+            try
+            {
+                var finalResult = await _gameService.GetFinalResultAsync(gamePin);
+                if (finalResult == null)
+                {
+                    _logger.LogWarning($"Failed to get final result for game {gamePin}");
+                    return;
+                }
+
+                _logger.LogInformation($"Game {gamePin} ended");
+
+                // Gửi kết quả cuối cùng cho tất cả
+                await Clients.Group($"Game_{gamePin}").SendAsync("GameEnded", finalResult);
+
+                // TODO: Lưu kết quả vào database (QuizAttempt, QuizAttemptDetail)
+
+                // Cleanup game session sau 1 phút
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(60000);
+                    await _gameService.CleanupGameAsync(gamePin);
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in EndGame for game {gamePin}");
+            }
+        }
+
+        // ==================== HOST CANCEL GAME ====================
+        /// <summary>
+        /// Host hủy game (trước hoặc trong khi chơi)
+        /// </summary>
+        public async Task CancelGame(string gamePin)
+        {
+            try
+            {
+                await Clients.Group($"Game_{gamePin}").SendAsync("GameCancelled", new
+                {
+                    GamePin = gamePin,
+                    Message = "The game has been cancelled by the host",
+                    Timestamp = DateTime.UtcNow
+                });
+
+                await _gameService.CleanupGameAsync(gamePin);
+
+                _logger.LogInformation($"Game {gamePin} cancelled by host");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in CancelGame for game {gamePin}");
+            }
         }
     }
 }

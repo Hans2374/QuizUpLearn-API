@@ -23,6 +23,12 @@ namespace QuizUpLearn.API.Middlewares
 				return;
 			}
 
+			if (context.Request.Path.StartsWithSegments("/game-hub"))
+			{
+				await _next(context);
+				return;
+			}
+
 			var originalBody = context.Response.Body;
 			await using var buffer = new MemoryStream();
 			context.Response.Body = buffer;
