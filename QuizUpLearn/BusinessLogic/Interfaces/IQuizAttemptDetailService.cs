@@ -11,5 +11,6 @@ namespace BusinessLogic.Interfaces
         Task<ResponseQuizAttemptDetailDto?> UpdateAsync(Guid id, RequestQuizAttemptDetailDto dto);
         Task<bool> SoftDeleteAsync(Guid id);
         Task<bool> RestoreAsync(Guid id);
+        Task<ResponseSubmitAnswersDto> SubmitAnswersAsync(RequestSubmitAnswersDto dto);
     }
 }

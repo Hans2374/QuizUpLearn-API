@@ -9,11 +9,15 @@ namespace BusinessLogic.Services
     public class QuizAttemptDetailService : IQuizAttemptDetailService
     {
         private readonly IQuizAttemptDetailRepo _repo;
+        private readonly IQuizAttemptRepo _attemptRepo;
+        private readonly IAnswerOptionRepo _answerOptionRepo;
         private readonly IMapper _mapper;
 
-        public QuizAttemptDetailService(IQuizAttemptDetailRepo repo, IMapper mapper)
+        public QuizAttemptDetailService(IQuizAttemptDetailRepo repo, IQuizAttemptRepo attemptRepo, IAnswerOptionRepo answerOptionRepo, IMapper mapper)
         {
             _repo = repo;
+            _attemptRepo = attemptRepo;
+            _answerOptionRepo = answerOptionRepo;
             _mapper = mapper;
         }
 
@@ -57,6 +61,105 @@ namespace BusinessLogic.Services
             var entity = _mapper.Map<QuizAttemptDetail>(dto);
             var updated = await _repo.UpdateAsync(id, entity);
             return updated == null ? null : _mapper.Map<ResponseQuizAttemptDetailDto>(updated);
+        }
+
+        public async Task<ResponseSubmitAnswersDto> SubmitAnswersAsync(RequestSubmitAnswersDto dto)
+        {
+            var attempt = await _attemptRepo.GetByIdAsync(dto.AttemptId);
+            if (attempt == null)
+            {
+                throw new InvalidOperationException("Attempt not found");
+            }
+
+            int correctCount = 0;
+            int wrongCount = 0;
+            var answerResults = new List<AnswerResultDto>();
+
+            // Lưu và chấm điểm từng câu trả lời
+            foreach (var answer in dto.Answers)
+            {
+                // Kiểm tra đáp án đúng
+                bool isCorrect = false;
+                Guid? correctAnswerOptionId = null;
+
+                if (Guid.TryParse(answer.UserAnswer, out Guid selectedAnswerOptionId))
+                {
+                    var selectedAnswerOption = await _answerOptionRepo.GetByIdAsync(selectedAnswerOptionId);
+                    
+                    if (selectedAnswerOption != null && selectedAnswerOption.QuizId == answer.QuestionId)
+                    {
+                        isCorrect = selectedAnswerOption.IsCorrect;
+                        
+                        // Tìm đáp án đúng (nếu người dùng chọn sai)
+                        if (!isCorrect)
+                        {
+                            var answerOptions = await _answerOptionRepo.GetByQuizIdAsync(answer.QuestionId);
+                            var correctOption = answerOptions.FirstOrDefault(ao => ao.IsCorrect);
+                            correctAnswerOptionId = correctOption?.Id;
+                        }
+                    }
+                }
+                else
+                {
+                    // Nếu không parse được, tìm đáp án đúng
+                    var answerOptions = await _answerOptionRepo.GetByQuizIdAsync(answer.QuestionId);
+                    var correctOption = answerOptions.FirstOrDefault(ao => ao.IsCorrect);
+                    correctAnswerOptionId = correctOption?.Id;
+                }
+
+                // Tạo QuizAttemptDetail
+                var detail = new QuizAttemptDetail
+                {
+                    AttemptId = dto.AttemptId,
+                    QuestionId = answer.QuestionId,
+                    UserAnswer = answer.UserAnswer,
+                    IsCorrect = isCorrect,
+                    TimeSpent = answer.TimeSpent,
+                    QuizId = answer.QuestionId,
+                    QuizAttemptId = dto.AttemptId
+                };
+
+                await _repo.CreateAsync(detail);
+
+                // Đếm số câu đúng/sai
+                if (isCorrect)
+                {
+                    correctCount++;
+                }
+                else
+                {
+                    wrongCount++;
+                }
+
+                // Thêm vào kết quả
+                answerResults.Add(new AnswerResultDto
+                {
+                    QuestionId = answer.QuestionId,
+                    IsCorrect = isCorrect,
+                    CorrectAnswerOptionId = correctAnswerOptionId
+                });
+            }
+
+            // Cập nhật QuizAttempt với kết quả
+            attempt.CorrectAnswers = correctCount;
+            attempt.WrongAnswers = wrongCount;
+            attempt.Score = correctCount;
+            attempt.Accuracy = attempt.TotalQuestions > 0 ? (decimal)correctCount / attempt.TotalQuestions : 0;
+            attempt.Status = "completed";
+
+            await _attemptRepo.UpdateAsync(dto.AttemptId, attempt);
+
+            return new ResponseSubmitAnswersDto
+            {
+                AttemptId = dto.AttemptId,
+                TotalQuestions = attempt.TotalQuestions,
+                CorrectAnswers = correctCount,
+                WrongAnswers = wrongCount,
+                Score = correctCount,
+                Accuracy = attempt.Accuracy,
+                Status = attempt.Status,
+                AnswerResults = answerResults
+            };
         }
     }
 }
