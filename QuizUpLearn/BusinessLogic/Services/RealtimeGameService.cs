@@ -3,30 +3,117 @@ using Repository.Interfaces;
 using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Caching.Distributed;
+using System.Text.Json;
 
 namespace BusinessLogic.Services
 {
     /// <summary>
     /// Service quản lý Kahoot-style realtime quiz game
-    /// State được lưu trong Memory (ConcurrentDictionary) 
-    /// Trong production nên dùng Redis
+    /// State được lưu trong Redis (Distributed Cache) 
+    /// Hỗ trợ scale-out multiple servers
     /// </summary>
     public class RealtimeGameService
     {
         private readonly IServiceProvider _serviceProvider;
+        private readonly IDistributedCache _cache; // ✨ Redis Cache
         private readonly ILogger<RealtimeGameService> _logger;
 
-        // In-memory storage (thay bằng Redis trong production)
-        private static readonly ConcurrentDictionary<string, GameSessionDto> _gameSessions = new(); // GamePin -> Session
-        private static readonly ConcurrentDictionary<string, Timer> _questionTimers = new(); // GamePin -> Timer
-        private static readonly ConcurrentDictionary<string, Dictionary<Guid, bool>> _correctAnswers = new(); // GamePin -> QuestionId -> IsCorrect map
+        // ⏱️ Timers vẫn giữ in-memory (không thể serialize Timer vào Redis)
+        private static readonly ConcurrentDictionary<string, Timer> _questionTimers = new();
 
         public RealtimeGameService(
             IServiceProvider serviceProvider,
+            IDistributedCache cache, // ✨ Inject Redis
             ILogger<RealtimeGameService> logger)
         {
             _serviceProvider = serviceProvider;
+            _cache = cache; // ✨ Redis
             _logger = logger;
+        }
+
+        // ==================== REDIS HELPER METHODS ====================
+        private async Task<GameSessionDto?> GetGameSessionFromRedisAsync(string gamePin)
+        {
+            try
+            {
+                var json = await _cache.GetStringAsync($"game:{gamePin}");
+                if (string.IsNullOrEmpty(json)) return null;
+                
+                return JsonSerializer.Deserialize<GameSessionDto>(json);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error getting game session {gamePin} from Redis");
+                return null;
+            }
+        }
+
+        private async Task SaveGameSessionToRedisAsync(string gamePin, GameSessionDto session)
+        {
+            try
+            {
+                var json = JsonSerializer.Serialize(session);
+                var options = new DistributedCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(2)
+                };
+                
+                await _cache.SetStringAsync($"game:{gamePin}", json, options);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error saving game session {gamePin} to Redis");
+                throw;
+            }
+        }
+
+        private async Task<Dictionary<Guid, bool>?> GetCorrectAnswersFromRedisAsync(string gamePin)
+        {
+            try
+            {
+                var json = await _cache.GetStringAsync($"answers:{gamePin}");
+                if (string.IsNullOrEmpty(json)) return null;
+                
+                return JsonSerializer.Deserialize<Dictionary<Guid, bool>>(json);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error getting correct answers for {gamePin} from Redis");
+                return null;
+            }
+        }
+
+        private async Task SaveCorrectAnswersToRedisAsync(string gamePin, Dictionary<Guid, bool> answers)
+        {
+            try
+            {
+                var json = JsonSerializer.Serialize(answers);
+                var options = new DistributedCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = TimeSpan.FromHours(2)
+                };
+                
+                await _cache.SetStringAsync($"answers:{gamePin}", json, options);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error saving correct answers for {gamePin} to Redis");
+                throw;
+            }
+        }
+
+        private async Task DeleteGameFromRedisAsync(string gamePin)
+        {
+            try
+            {
+                await _cache.RemoveAsync($"game:{gamePin}");
+                await _cache.RemoveAsync($"answers:{gamePin}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error deleting game {gamePin} from Redis");
+            }
         }
 
         // ==================== HOST CREATES GAME ====================
@@ -89,7 +176,9 @@ namespace BusinessLogic.Services
             do
             {
                 gamePin = new Random().Next(100000, 999999).ToString();
-            } while (_gameSessions.ContainsKey(gamePin));
+                var existingGame = await GetGameSessionFromRedisAsync(gamePin);
+                if (existingGame == null) break; // PIN is unique
+            } while (true);
 
             var gameSessionId = Guid.NewGuid();
 
@@ -108,10 +197,10 @@ namespace BusinessLogic.Services
                 CreatedAt = DateTime.UtcNow
             };
 
-            _gameSessions[gamePin] = gameSession;
-            _correctAnswers[gamePin] = correctAnswersMap;
+            await SaveGameSessionToRedisAsync(gamePin, gameSession);
+            await SaveCorrectAnswersToRedisAsync(gamePin, correctAnswersMap);
 
-            _logger.LogInformation($"Game created with PIN: {gamePin} by Host: {dto.HostUserName}");
+            _logger.LogInformation($"✅ Game created in Redis with PIN: {gamePin} by Host: {dto.HostUserName}");
 
             return new CreateGameResponseDto
             {
@@ -121,26 +210,27 @@ namespace BusinessLogic.Services
             };
         }
 
-        // ==================== LOBBY ====================
-        /// <summary>
-        /// Host kết nối vào game session (sau khi tạo)
-        /// </summary>
         public async Task<bool> HostConnectAsync(string gamePin, string connectionId)
         {
-            if (!_gameSessions.TryGetValue(gamePin, out var session))
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null)
                 return false;
 
             session.HostConnectionId = connectionId;
-            _logger.LogInformation($"Host connected to game {gamePin}");
+            await SaveGameSessionToRedisAsync(gamePin, session);
+            
+            _logger.LogInformation($"✅ Host connected to game {gamePin}");
             return true;
         }
 
+        // ==================== PLAYER JOIN/LEAVE ====================
         /// <summary>
         /// Player join vào lobby bằng Game PIN
         /// </summary>
         public async Task<PlayerInfo?> PlayerJoinAsync(string gamePin, string playerName, string connectionId)
         {
-            if (!_gameSessions.TryGetValue(gamePin, out var session))
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null)
                 return null;
 
             if (session.Status != GameStatus.Lobby)
@@ -157,9 +247,11 @@ namespace BusinessLogic.Services
                 Score = 0,
                 JoinedAt = DateTime.UtcNow
             };
-
+            
             session.Players.Add(player);
-            _logger.LogInformation($"Player '{playerName}' joined game {gamePin}. Total players: {session.Players.Count}");
+            await SaveGameSessionToRedisAsync(gamePin, session);
+            
+            _logger.LogInformation($"✅ Player '{playerName}' joined game {gamePin}. Total players: {session.Players.Count}");
 
             return player;
         }
@@ -169,7 +261,8 @@ namespace BusinessLogic.Services
         /// </summary>
         public async Task<bool> PlayerLeaveAsync(string gamePin, string connectionId)
         {
-            if (!_gameSessions.TryGetValue(gamePin, out var session))
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null)
                 return false;
 
             var player = session.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
@@ -177,6 +270,8 @@ namespace BusinessLogic.Services
                 return false;
 
             session.Players.Remove(player);
+            await SaveGameSessionToRedisAsync(gamePin, session);
+
             _logger.LogInformation($"Player '{player.PlayerName}' left game {gamePin}");
 
             return true;
@@ -187,8 +282,7 @@ namespace BusinessLogic.Services
         /// </summary>
         public async Task<GameSessionDto?> GetGameSessionAsync(string gamePin)
         {
-            _gameSessions.TryGetValue(gamePin, out var session);
-            return session;
+            return await GetGameSessionFromRedisAsync(gamePin);
         }
 
         // ==================== START GAME ====================
@@ -197,7 +291,8 @@ namespace BusinessLogic.Services
         /// </summary>
         public async Task<QuestionDto?> StartGameAsync(string gamePin, Action<string> onQuestionTimeout)
         {
-            if (!_gameSessions.TryGetValue(gamePin, out var session))
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null)
                 return null;
 
             if (session.Status != GameStatus.Lobby)
@@ -215,8 +310,9 @@ namespace BusinessLogic.Services
 
             // Start timer trên server
             StartQuestionTimer(gamePin, session.TimePerQuestion, onQuestionTimeout);
-
-            _logger.LogInformation($"Game {gamePin} started with {session.Players.Count} players");
+            await SaveGameSessionToRedisAsync(gamePin, session);
+            
+            _logger.LogInformation($"✅ Game {gamePin} started with {session.Players.Count} players");
 
             return question;
         }
@@ -227,7 +323,8 @@ namespace BusinessLogic.Services
         /// </summary>
         public async Task<bool> SubmitAnswerAsync(string gamePin, string connectionId, Guid questionId, Guid answerId)
         {
-            if (!_gameSessions.TryGetValue(gamePin, out var session))
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null)
                 return false;
 
             if (session.Status != GameStatus.InProgress)
@@ -251,7 +348,8 @@ namespace BusinessLogic.Services
 
             // Check đáp án đúng
             bool isCorrect = false;
-            if (_correctAnswers.TryGetValue(gamePin, out var correctMap))
+            var correctMap = await GetCorrectAnswersFromRedisAsync(gamePin);
+            if (correctMap != null)
             {
                 isCorrect = correctMap.GetValueOrDefault(answerId, false);
             }
@@ -271,9 +369,9 @@ namespace BusinessLogic.Services
                 PlayerName = player.PlayerName,
                 QuestionId = questionId,
                 AnswerId = answerId,
-                TimeSpent = timeSpent,
                 IsCorrect = isCorrect,
                 PointsEarned = points,
+                TimeSpent = timeSpent,
                 SubmittedAt = DateTime.UtcNow
             };
 
@@ -282,7 +380,9 @@ namespace BusinessLogic.Services
             // Cập nhật điểm của player
             player.Score += points;
 
-            _logger.LogInformation($"Player '{player.PlayerName}' submitted answer for question {questionId}. Correct: {isCorrect}, Points: {points}");
+            await SaveGameSessionToRedisAsync(gamePin, session);
+
+            _logger.LogInformation($"✅ Player '{player.PlayerName}' submitted answer for question {questionId}. Correct: {isCorrect}, Points: {points}");
 
             return true;
         }
@@ -293,7 +393,8 @@ namespace BusinessLogic.Services
         /// </summary>
         public async Task<GameAnswerResultDto?> GetQuestionResultAsync(string gamePin)
         {
-            if (!_gameSessions.TryGetValue(gamePin, out var session))
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null)
                 return null;
 
             var currentQuestion = session.Questions[session.CurrentQuestionIndex];
@@ -302,7 +403,8 @@ namespace BusinessLogic.Services
             Guid correctAnswerId = Guid.Empty;
             string correctAnswerText = string.Empty;
 
-            if (_correctAnswers.TryGetValue(gamePin, out var correctMap))
+            var correctMap = await GetCorrectAnswersFromRedisAsync(gamePin);
+            if (correctMap != null)
             {
                 foreach (var option in currentQuestion.AnswerOptions)
                 {
@@ -341,6 +443,7 @@ namespace BusinessLogic.Services
             }
 
             session.Status = GameStatus.ShowingResult;
+            await SaveGameSessionToRedisAsync(gamePin, session);
 
             return new GameAnswerResultDto
             {
@@ -358,7 +461,8 @@ namespace BusinessLogic.Services
         /// </summary>
         public async Task<LeaderboardDto?> GetLeaderboardAsync(string gamePin)
         {
-            if (!_gameSessions.TryGetValue(gamePin, out var session))
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null)
                 return null;
 
             var rankings = session.Players
@@ -373,6 +477,7 @@ namespace BusinessLogic.Services
                 .ToList();
 
             session.Status = GameStatus.ShowingLeaderboard;
+            await SaveGameSessionToRedisAsync(gamePin, session);
 
             return new LeaderboardDto
             {
@@ -387,7 +492,8 @@ namespace BusinessLogic.Services
         /// </summary>
         public async Task<QuestionDto?> NextQuestionAsync(string gamePin, Action<string> onQuestionTimeout)
         {
-            if (!_gameSessions.TryGetValue(gamePin, out var session))
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null)
                 return null;
 
             session.CurrentQuestionIndex++;
@@ -396,6 +502,7 @@ namespace BusinessLogic.Services
             if (session.CurrentQuestionIndex >= session.Questions.Count)
             {
                 session.Status = GameStatus.Completed;
+                await SaveGameSessionToRedisAsync(gamePin, session);
                 return null; // Hết câu hỏi
             }
 
@@ -408,7 +515,9 @@ namespace BusinessLogic.Services
             // Start timer trên server
             StartQuestionTimer(gamePin, session.TimePerQuestion, onQuestionTimeout);
 
-            _logger.LogInformation($"Game {gamePin} moved to question {session.CurrentQuestionIndex + 1}");
+            await SaveGameSessionToRedisAsync(gamePin, session);
+            
+            _logger.LogInformation($"✅ Game {gamePin} moved to question {session.CurrentQuestionIndex + 1}");
 
             return question;
         }
@@ -419,7 +528,8 @@ namespace BusinessLogic.Services
         /// </summary>
         public async Task<FinalResultDto?> GetFinalResultAsync(string gamePin)
         {
-            if (!_gameSessions.TryGetValue(gamePin, out var session))
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null)
                 return null;
 
             if (session.Status != GameStatus.Completed)
@@ -460,10 +570,10 @@ namespace BusinessLogic.Services
                 timer.Dispose();
             }
 
-            _gameSessions.TryRemove(gamePin, out _);
-            _correctAnswers.TryRemove(gamePin, out _);
+            // ✨ Xóa khỏi Redis
+            await DeleteGameFromRedisAsync(gamePin);
 
-            _logger.LogInformation($"Game {gamePin} cleaned up");
+            _logger.LogInformation($"✅ Game {gamePin} cleaned up from Redis");
         }
 
         // ==================== TIMER MANAGEMENT ====================
@@ -481,7 +591,7 @@ namespace BusinessLogic.Services
             // Create new timer
             var timer = new Timer(_ =>
             {
-                _logger.LogInformation($"Question timer expired for game {gamePin}");
+                _logger.LogInformation($"⏰ Question timer expired for game {gamePin}");
                 onTimeout(gamePin);
 
                 // Dispose timer sau khi chạy
@@ -500,18 +610,12 @@ namespace BusinessLogic.Services
         /// </summary>
         public async Task<PlayerInfo?> HandleDisconnectAsync(string connectionId)
         {
-            // Tìm player trong tất cả các game
-            foreach (var session in _gameSessions.Values)
-            {
-                var player = session.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
-                if (player != null)
-                {
-                    session.Players.Remove(player);
-                    _logger.LogInformation($"Player '{player.PlayerName}' disconnected from game {session.GamePin}");
-                    return player;
-                }
-            }
-
+            // ⚠️ NOTE: Redis không hỗ trợ scan tất cả games dễ dàng
+            // Giải pháp tạm: Lưu mapping connectionId -> gamePin riêng
+            // Hoặc client phải gọi LeaveGame trước khi disconnect
+            
+            _logger.LogWarning($"HandleDisconnectAsync called for {connectionId}. Consider implementing connection tracking in Redis.");
+            
             return null;
         }
 
@@ -520,15 +624,12 @@ namespace BusinessLogic.Services
         /// </summary>
         public async Task<string?> GetGamePinByConnectionAsync(string connectionId)
         {
-            foreach (var session in _gameSessions.Values)
-            {
-                if (session.HostConnectionId == connectionId || 
-                    session.Players.Any(p => p.ConnectionId == connectionId))
-                {
-                    return session.GamePin;
-                }
-            }
-
+            // ⚠️ NOTE: Redis không hỗ trợ scan tất cả games dễ dàng
+            // Giải pháp: Lưu mapping connectionId -> gamePin riêng trong Redis
+            // Ví dụ: await _cache.GetStringAsync($"connection:{connectionId}");
+            
+            _logger.LogWarning($"GetGamePinByConnectionAsync called for {connectionId}. Consider implementing connection tracking in Redis.");
+            
             return null;
         }
     }

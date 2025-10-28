@@ -11,8 +11,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        // Cho phép mọi origin trong dev để test (production nên giới hạn)
-        policy.SetIsOriginAllowed(origin => true) // Allow any origin for development
+        policy.SetIsOriginAllowed(origin => true) 
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -22,8 +21,22 @@ builder.Services.AddCors(options =>
 // Add services to the container.
 builder.Services.AddControllers();
 
-// Add SignalR
-builder.Services.AddSignalR();
+// ✨ Add Redis Cache for distributed caching
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = builder.Configuration["Redis:ConnectionString"];
+    options.InstanceName = builder.Configuration["Redis:InstanceName"];
+});
+
+builder.Services.AddSignalR()
+    .AddStackExchangeRedis(
+        builder.Configuration["Redis:ConnectionString"]!, 
+        options =>
+        {
+            options.Configuration.ChannelPrefix = "QuizUpLearn_SignalR";
+            options.Configuration.AbortOnConnectFail = false;
+        }
+    );
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
