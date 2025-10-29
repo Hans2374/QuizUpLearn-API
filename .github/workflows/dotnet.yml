@@ -69,6 +69,9 @@ jobs:
 
                   echo "GEMINI__APIKEY=${{ secrets.GEMINI__APIKEY }}" >> .env
                   echo "OPENROUTER__APIKEY=${{ secrets.OPENROUTER__APIKEY }}" >> .env
+
+                  echo "REDIS__ConnectionString=${{ secrets.REDIS__ConnectionString }}" >> .env
+                  echo "REDIS__InstanceName=${{ secrets.REDIS__InstanceName }}" >> .env
             - name: Build images with Docker Compose
               working-directory: ./publish/QuizUpLearn
               run: docker compose build
