@@ -6,12 +6,13 @@
         public required string Difficulty { get; set; }
         public required string Topic { get; set; }
         public Guid CreatorId { get; set; }
-        public string SkillType { get; set; } = "Reading";
         public required string ToeicPart { get; set; }
     }
     public class AiGenerateQuizResponseDto
     {
-        public string QuestionText { get; set; }
+        public string? AudioScript { get; set; }
+        public string? ImageDescription { get; set; }
+        public string? QuestionText { get; set; }
         public List<AiGenerateAnswerOptionResponseDto> AnswerOptions { get; set; }
     }
     public class AiGenerateAnswerOptionResponseDto
@@ -20,7 +21,6 @@
         public string OptionText { get; set; }
         public bool IsCorrect { get; set; }
     }
-
     public class AIValidationResponseDto
     {
         public bool IsValid { get; set; }

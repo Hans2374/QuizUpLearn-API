@@ -15,29 +15,6 @@ namespace QuizUpLearn.API.Controllers
             _aiService = aiService;
         }
         /// <summary>
-        /// This endpoint generates a set of practice quizzes based on the provided input data
-        /// </summary>
-        /// <returns></returns>
-        [HttpPost("generate-quiz-set")]
-        public async Task<IActionResult> GenerateQuizSet([FromBody] AiGenerateQuizSetRequestDto inputData)
-        {
-            if (inputData == null)
-            {
-                return BadRequest("Prompt cannot be empty.");
-            }
-            try
-            {
-                var result = await _aiService.GeneratePracticeQuizSetAsync(inputData);
-                
-                return Ok(result);
-            }
-            catch (Exception ex)
-            {
-                // Log the exception (not shown here for brevity)
-                return StatusCode(500, $"Internal server error: {ex.Message}");
-            }
-        }
-        /// <summary>
         /// This endpoint validates an existing quiz set by its ID.
         /// </summary>
         /// <param name="quizSetId"></param>
@@ -56,7 +33,29 @@ namespace QuizUpLearn.API.Controllers
             }
             catch (Exception ex)
             {
-                // Log the exception (not shown here for brevity)
+                return StatusCode(500, $"Internal server error: {ex.Message}");
+            }
+        }
+        /// <summary>
+        /// 
+        /// </summary>
+        /// <param name="inputData"></param>
+        /// <returns></returns>
+        [HttpPost("generate-quiz-set-part-1")]
+        public async Task<IActionResult> GenerateQuizSetPart1([FromBody] AiGenerateQuizSetRequestDto inputData)
+        {
+            if (inputData == null)
+            {
+                return BadRequest("Prompt cannot be empty.");
+            }
+            try
+            {
+                var result = await _aiService.GeneratePracticeQuizSetPart1Async(inputData);
+
+                return Ok(result);
+            }
+            catch (Exception ex)
+            {
                 return StatusCode(500, $"Internal server error: {ex.Message}");
             }
         }
