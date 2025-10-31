@@ -6,7 +6,6 @@ using Microsoft.OpenApi.Models;
 using Repository.DBContext;
 using Repository.Interfaces;
 using Repository.Repositories;
-using System;
 
 namespace QuizUpLearn.API.DI
 {
@@ -69,8 +68,8 @@ namespace QuizUpLearn.API.DI
         {
             services.AddDbContext<MyDbContext>(options =>
             {
-                options.UseSqlServer(configuration.GetConnectionString("DefaultConnection"));
-                //options.UseNpgsql(configuration.GetConnectionString("PostgreSqlConnection"));
+                //options.UseSqlServer(configuration.GetConnectionString("DefaultConnection"));
+                options.UseNpgsql(configuration.GetConnectionString("PostgreSqlConnection"));
             });
         }
 
