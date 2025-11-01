@@ -5,6 +5,7 @@ using BusinessLogic.DTOs.QuizSetDtos;
 using BusinessLogic.Helpers;
 using BusinessLogic.Interfaces;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -19,6 +20,7 @@ namespace BusinessLogic.Services
         private readonly IQuizService _quizService;
         private readonly IAnswerOptionService _answerOptionService;
         private readonly IUploadService _uploadService;
+        private readonly ILogger<AIService> _logger;
         //API keys
         private readonly string _geminiApiKey;
         private readonly string _openRouterApiKey;
@@ -28,13 +30,14 @@ namespace BusinessLogic.Services
         private readonly string _maleVoiceId;
         private readonly string _femaleVoiceId;
         private readonly string _narratorVoiceId;
-        public AIService(HttpClient httpClient, IConfiguration configuration, IQuizSetService quizSetService, IQuizService quizService, IAnswerOptionService answerOptionService, IUploadService uploadService)
+        public AIService(HttpClient httpClient, IConfiguration configuration, IQuizSetService quizSetService, IQuizService quizService, IAnswerOptionService answerOptionService, IUploadService uploadService, ILogger<AIService> logger)
         {
             _httpClient = httpClient;
             _quizSetService = quizSetService;
             _quizService = quizService;
             _answerOptionService = answerOptionService;
             _uploadService = uploadService;
+            _logger = logger;
             //API keys
             _geminiApiKey = configuration["Gemini:ApiKey"] ?? throw new ArgumentNullException("Gemini API key is not configured.");
             _openRouterApiKey = configuration["OpenRouter:ApiKey"] ?? throw new ArgumentNullException("Open router API key is not configured.");
@@ -54,6 +57,7 @@ namespace BusinessLogic.Services
 
         private async Task<string> GeminiGenerateContentAsync(string prompt)
         {
+            _logger.LogInformation($"Gemini api key: {_geminiApiKey}");
             var url = $"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
 
             var body = new
@@ -79,7 +83,6 @@ namespace BusinessLogic.Services
 
             var json = JsonSerializer.Serialize(body);
             var content = new StringContent(json, Encoding.UTF8, "application/json");
-
             var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Headers.Add("x-goog-api-key", _geminiApiKey);
             request.Content = content;
@@ -108,7 +111,7 @@ namespace BusinessLogic.Services
 
         private async Task<string> GenerateContentAsync(string prompt)
         {
-            
+            _logger.LogInformation($"OpenRouter api key: {_openRouterApiKey}");
             var url = "https://openrouter.ai/api/v1/chat/completions";
 
             _httpClient.DefaultRequestHeaders.Clear();
@@ -163,6 +166,7 @@ namespace BusinessLogic.Services
 
         private async Task<byte[]> GenerateImageAsync(string prompt)
         {
+            _logger.LogInformation($"Nebius api key: {_nebiusApiKey}");
             var url = $"https://api.studio.nebius.com/v1/images/generations";
 
             var payload = new
@@ -212,6 +216,7 @@ namespace BusinessLogic.Services
 
         private async Task<byte[]> GenerateAudioAsync(string text, VoiceRoles role)
         {
+            _logger.LogInformation($"Eleven Labs api key: {_elevenLabsApiKey}");
             var voiceId = GetVoiceId(role);
             var url = $"https://api.elevenlabs.io/v1/text-to-speech/{voiceId}";
 
