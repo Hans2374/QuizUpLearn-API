@@ -12,10 +12,11 @@ namespace BusinessLogic.DTOs.AiDtos
     }
     public class AiGenerateQuizResponseDto
     {
+        public string? Passage { get; set; }
         public string? AudioScript { get; set; }
         public string? ImageDescription { get; set; }
         public string? QuestionText { get; set; }
-        public List<AiGenerateAnswerOptionResponseDto> AnswerOptions { get; set; }
+        public List<AiGenerateAnswerOptionResponseDto>? AnswerOptions { get; set; }
     }
     public class AiGenerateAnswerOptionResponseDto
     {
