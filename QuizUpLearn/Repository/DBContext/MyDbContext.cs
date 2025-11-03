@@ -17,7 +17,11 @@ namespace Repository.DBContext
         public DbSet<AnswerOption> AnswerOptions { get; set; }
         public DbSet<QuizAttempt> QuizAttempts { get; set; }
         public DbSet<QuizAttemptDetail> QuizAttemptDetails { get; set; }
-
+        public DbSet<Event> Events { get; set; }
+        public DbSet<EventParticipant> EventParticipants { get; set; }
+        public DbSet<Tournament> Tournaments { get; set; }
+        public DbSet<TournamentParticipant> TournamentParticipants { get; set; }
+        public DbSet<UserMistake> UserMistakes { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
