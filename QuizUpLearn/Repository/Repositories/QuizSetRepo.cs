@@ -64,9 +64,9 @@ namespace Repository.Repositories
                 existingQuizSet.Title = quizSet.Title;
             if(!string.IsNullOrEmpty(quizSet.Description))
                 existingQuizSet.Description = quizSet.Description;
-            if(!string.IsNullOrEmpty(quizSet.QuizType))
+            if (!string.IsNullOrEmpty(quizSet.QuizType.ToString()))
                 existingQuizSet.QuizType = quizSet.QuizType;
-            if(!string.IsNullOrEmpty(quizSet.DifficultyLevel))
+            if (!string.IsNullOrEmpty(quizSet.DifficultyLevel))
                 existingQuizSet.DifficultyLevel = quizSet.DifficultyLevel;
             if(quizSet.GroupItems != null && quizSet.GroupItems.Count > 0)
                 existingQuizSet.GroupItems = quizSet.GroupItems;

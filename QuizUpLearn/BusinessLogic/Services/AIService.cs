@@ -7,6 +7,7 @@ using BusinessLogic.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Identity.Client;
+using Repository.Enums;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -331,15 +332,15 @@ Return only these 2 fields as JSON structure:
 
             return (allValid, feedbackBuilder.ToString());
         }
-        //Done
+        
         public async Task<QuizSetResponseDto> GeneratePracticeQuizSetPart1Async(AiGenerateQuizSetRequestDto inputData)
         {
             var createdQuizSet = await _quizSetService.CreateQuizSetAsync(new QuizSetRequestDto
             {
                 Title = inputData.Topic,
                 Description = $"AI-generated TOEIC practice quiz on {inputData.Topic} focus on TOEIC part 1",
-                QuizType = "Practice",
-                SkillType = "",
+                QuizType = QuizSetTypeEnum.Practice,
+                SkillType = "Listening",
                 DifficultyLevel = inputData.Difficulty,
                 CreatedBy = inputData.CreatorId
             });
@@ -417,15 +418,15 @@ Only return in this structure no need any extended field/infor:
 
             return createdQuizSet;
         }
-        //Done
+        
         public async Task<QuizSetResponseDto> GeneratePracticeQuizSetPart2Async(AiGenerateQuizSetRequestDto inputData)
         {
             var createdQuizSet = await _quizSetService.CreateQuizSetAsync(new QuizSetRequestDto
             {
                 Title = inputData.Topic,
                 Description = $"AI-generated TOEIC practice quiz on {inputData.Topic} focus on TOEIC part 2",
-                QuizType = "Practice",
-                SkillType = "",
+                QuizType = QuizSetTypeEnum.Practice,
+                SkillType = "Listening",
                 DifficultyLevel = inputData.Difficulty,
                 CreatedBy = inputData.CreatorId
             });
@@ -490,15 +491,15 @@ Only return in this structure no need any extended field/infor:
             }
             return createdQuizSet;
         }
-        //Done
+        
         public async Task<QuizSetResponseDto> GeneratePracticeQuizSetPart3Async(AiGenerateQuizSetRequestDto inputData)
         {
             var createdQuizSet = await _quizSetService.CreateQuizSetAsync(new QuizSetRequestDto
             {
                 Title = inputData.Topic,
                 Description = $"AI-generated TOEIC practice quiz on {inputData.Topic} focus on TOEIC part 3",
-                QuizType = "Practice",
-                SkillType = "",
+                QuizType = QuizSetTypeEnum.Practice,
+                SkillType = "Listening",
                 DifficultyLevel = inputData.Difficulty,
                 CreatedBy = inputData.CreatorId
             });
@@ -593,15 +594,15 @@ Only return in this structure no need any extended field/infor:
             }
             return createdQuizSet;
         }
-        //Done
+        
         public async Task<QuizSetResponseDto> GeneratePracticeQuizSetPart4Async(AiGenerateQuizSetRequestDto inputData)
         {
             var createdQuizSet = await _quizSetService.CreateQuizSetAsync(new QuizSetRequestDto
             {
                 Title = inputData.Topic,
                 Description = $"AI-generated TOEIC practice quiz on {inputData.Topic} focus on TOEIC part 4",
-                QuizType = "Practice",
-                SkillType = "",
+                QuizType = QuizSetTypeEnum.Practice,
+                SkillType = "Listening",
                 DifficultyLevel = inputData.Difficulty,
                 CreatedBy = inputData.CreatorId
             });
@@ -698,15 +699,15 @@ Only return in this structure no need any extended field/infor:
             }
             return createdQuizSet;
         }
-        //Done
+        
         public async Task<QuizSetResponseDto> GeneratePracticeQuizSetPart5Async(AiGenerateQuizSetRequestDto inputData)
         {
             var createdQuizSet = await _quizSetService.CreateQuizSetAsync(new QuizSetRequestDto
             {
                 Title = inputData.Topic,
                 Description = $"AI-generated TOEIC practice quiz on {inputData.Topic} focus on TOEIC part 5",
-                QuizType = "Practice",
-                SkillType = "",
+                QuizType = QuizSetTypeEnum.Practice,
+                SkillType = "Reading",
                 DifficultyLevel = inputData.Difficulty,
                 CreatedBy = inputData.CreatorId
             });
@@ -772,8 +773,8 @@ Only return in this structure no need any extended field/infor:
             {
                 Title = inputData.Topic,
                 Description = $"AI-generated TOEIC practice quiz on {inputData.Topic} focus on TOEIC part 6",
-                QuizType = "Practice",
-                SkillType = "",
+                QuizType = QuizSetTypeEnum.Practice,
+                SkillType = "Reading",
                 DifficultyLevel = inputData.Difficulty,
                 CreatedBy = inputData.CreatorId
             });
@@ -880,8 +881,8 @@ Only return in this structure no need any extended field/infor:
             {
                 Title = inputData.Topic,
                 Description = $"AI-generated TOEIC Part 7 Reading practice on {inputData.Topic}",
-                QuizType = "Practice",
-                SkillType = "",
+                QuizType = QuizSetTypeEnum.Practice,
+                SkillType = "Reading",
                 DifficultyLevel = inputData.Difficulty,
                 CreatedBy = inputData.CreatorId
             });
@@ -970,7 +971,6 @@ Return JSON:
 
             return createdQuizSet;
         }
-
 
         public Task<(bool, string)> ValidateImageAsync(string context)
         {

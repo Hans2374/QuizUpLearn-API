@@ -1,13 +1,14 @@
 ﻿using Repository.Entities.BaseModelEntity;
+using Repository.Enums;
 
 namespace Repository.Entities
 {
     public class QuizSet : BaseEntity
     {
-        public string Title { get; set; }
-        public string Description { get; set; }
-        public string QuizType { get; set; }
-        public string DifficultyLevel { get; set; }
+        public string Title { get; set; } = string.Empty;
+        public string Description { get; set; } = string.Empty;
+        public QuizSetTypeEnum QuizType { get; set; } = QuizSetTypeEnum.Practice;
+        public string DifficultyLevel { get; set; } = string.Empty;
         public Guid CreatedBy { get; set; }
         public bool IsAIGenerated { get; set; } = true;
         public bool IsPublished { get; set; } = false;

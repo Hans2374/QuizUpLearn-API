@@ -37,7 +37,7 @@ namespace BusinessLogic.Services
                 IsPublished = true,
                 IsAIGenerated = false,
                 IsPremiumOnly = false,
-                QuizType = "Placement",
+                QuizType = Repository.Enums.QuizSetTypeEnum.Placement,
                 CreatedBy = userId
             });
             

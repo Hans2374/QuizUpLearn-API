@@ -15,7 +15,7 @@ namespace Repository.Entities
         public int TotalPoints { get; set; }
         public string? PreferredLanguage { get; set; }
         public string? Timezone { get; set; }
-
+        public List<string>? WeakPoints { get; set; } = new List<string>();
 
         // Navigation
         public virtual Account? Account { get; set; }

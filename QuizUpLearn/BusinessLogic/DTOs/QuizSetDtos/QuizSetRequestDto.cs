@@ -1,4 +1,5 @@
 ﻿using BusinessLogic.DTOs.QuizDtos;
+using Repository.Enums;
 
 namespace BusinessLogic.DTOs.QuizSetDtos
 {
@@ -6,13 +7,13 @@ namespace BusinessLogic.DTOs.QuizSetDtos
     {
         public string Title { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
-        public string QuizType { get; set; } = string.Empty;
+        public QuizSetTypeEnum QuizType { get; set; }
         public string SkillType { get; set; } = string.Empty;
         public string DifficultyLevel { get; set; } = string.Empty;
         public Guid? CreatedBy { get; set; }
-        public bool IsAIGenerated { get; set; } = true;
-        public bool IsPublished { get; set; } = false;
-        public bool IsPremiumOnly { get; set; } = false;
+        public bool? IsAIGenerated { get; set; }
+        public bool? IsPublished { get; set; }
+        public bool? IsPremiumOnly { get; set; }
         public Dictionary<string, string>? GroupItems { get; set; }
         // navgation property
         public List<QuizRequestDto> Quizzes { get; set; } = new List<QuizRequestDto>();

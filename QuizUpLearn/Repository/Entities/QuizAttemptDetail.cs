@@ -15,6 +15,6 @@ namespace Repository.Entities
 
         // Navigation properties
         public virtual QuizAttempt? QuizAttempt { get; set; }
-        public virtual Quiz Quiz { get; set; }
+        public virtual Quiz? Quiz { get; set; }
     }
 }
