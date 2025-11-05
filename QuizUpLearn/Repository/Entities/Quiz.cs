@@ -21,5 +21,6 @@ namespace Repository.Entities
         public virtual QuizSet? QuizSet { get; set; }
         public virtual ICollection<AnswerOption> AnswerOptions { get; set; } = new List<AnswerOption>();
         public virtual ICollection<QuizAttemptDetail> QuizAttemptDetails { get; set; } = new List<QuizAttemptDetail>();
+        public virtual ICollection<UserMistake> UserMistakes { get; set; } = new List<UserMistake>();
     }
 }

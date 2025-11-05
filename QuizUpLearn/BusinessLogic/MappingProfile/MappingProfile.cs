@@ -51,6 +51,9 @@ namespace BusinessLogic.MappingProfile
                 .ForMember(dest => dest.ScorePercentage, opt => opt.MapFrom(src => (double)src.Accuracy))
                 .ForMember(dest => dest.Status, opt => opt.MapFrom(src => src.Accuracy >= 70 ? "Passed" : "Failed"))
                 .ForMember(dest => dest.TimeSpent, opt => opt.MapFrom(src => src.TimeSpent ?? 0));
+            // UserMistake Mappings
+            CreateMap<Repository.Entities.UserMistake, DTOs.UserMistakeDtos.RequestUserMistakeDto>().ReverseMap();
+            CreateMap<Repository.Entities.UserMistake, DTOs.UserMistakeDtos.ResponseUserMistakeDto>().ReverseMap();
             
             //Add other mappings here as needed
         }
