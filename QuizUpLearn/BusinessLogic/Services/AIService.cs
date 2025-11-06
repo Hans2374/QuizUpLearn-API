@@ -284,6 +284,15 @@ namespace BusinessLogic.Services
             foreach (var quiz in quizzes)
             {
                 var options = await _answerOptionService.GetByQuizIdAsync(quiz.Id);
+                var quizGroupItem = string.Empty;
+                if(quiz.GroupId != null && quizSet.GroupItems.ContainsKey($"{quiz.GroupId}"))
+                {
+                    quizGroupItem = quizSet.GroupItems[$"{quiz.GroupId}"];
+                }
+                else
+                {
+                    quizGroupItem = "No group context (single question).";
+                }
 
                 var validationPrompt = $@"
 You are an expert TOEIC test validator.
@@ -297,10 +306,12 @@ suitable for learners with TOEIC scores around {quizSet.DifficultyLevel}.
 
 ### Quiz to Validate
 Question: {quiz.QuestionText}
+Question group name(if any): {quiz.GroupId}
+Group items(if any): {quizSet.GroupItems[$"{quiz.GroupId}"]}
 Options:
 {string.Join("\n", options.Select(o => $"{o.OptionLabel}. {o.OptionText} (Correct: {o.IsCorrect})"))}
 
-Check the criteria and explain shortly at Feedback field:
+Check the criteria and explain shortly at Feedback field if the question is invalid:
 1. The question is grammatically correct and meaningful.
 2. There is ONE or more correct answer.
 3. The correct answer makes sense in context.
@@ -896,7 +907,7 @@ Only return in this structure no need any extended field/infor:
 Generate a TOEIC Part 7 reading passage about '{inputData.Topic}' 
 for learners with TOEIC score around {inputData.Difficulty}.
 Avoid repeating previous passages: {previousPassages}.
-Length: around 120-150 words, realistic topic (email, article, or notice).
+Length: around 120-150 words.
 
 Return only JSON:
 {{

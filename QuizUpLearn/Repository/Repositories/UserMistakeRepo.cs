@@ -1,0 +1,68 @@
+﻿using Microsoft.EntityFrameworkCore;
+using Repository.DBContext;
+using Repository.Entities;
+using Repository.Interfaces;
+
+namespace Repository.Repositories
+{
+    public class UserMistakeRepo : IUserMistakeRepo
+    {
+        private readonly MyDbContext _context;
+
+        public UserMistakeRepo(MyDbContext context)
+        {
+            _context = context;
+        }
+
+        public async Task<IEnumerable<UserMistake>> GetAllAsync()
+        {
+            return await _context.UserMistakes.ToListAsync();
+        }
+
+        public async Task<UserMistake?> GetByIdAsync(Guid id)
+        {
+            return await _context.UserMistakes.FindAsync(id);
+        }
+
+        public async Task AddAsync(UserMistake userMistake)
+        {
+            await _context.UserMistakes.AddAsync(userMistake);
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task UpdateAsync(Guid id, UserMistake userMistake)
+        {
+            var existingUserMistake = await _context.UserMistakes.FindAsync(id);
+            if (existingUserMistake == null)
+            {
+                throw new ArgumentException("UserMistake not found");
+            }
+            if(userMistake.TimesAttempted > 0)
+            {
+                existingUserMistake.TimesAttempted = userMistake.TimesAttempted;
+            }
+            if(userMistake.TimesWrong > 0)
+            {
+                existingUserMistake.TimesWrong = userMistake.TimesWrong;
+            }
+            existingUserMistake.LastAttemptedAt = userMistake.LastAttemptedAt;
+            
+            if(userMistake.IsAnalyzed)
+            {
+                existingUserMistake.IsAnalyzed = userMistake.IsAnalyzed;
+            }
+            _context.UserMistakes.Update(existingUserMistake);
+            await _context.SaveChangesAsync();
+        }
+
+        public async Task DeleteAsync(Guid id)
+        {
+            var userMistake = await GetByIdAsync(id);
+            if (userMistake != null)
+            {
+                _context.UserMistakes.Remove(userMistake);
+                await _context.SaveChangesAsync();
+            }
+        }
+    }
+}
