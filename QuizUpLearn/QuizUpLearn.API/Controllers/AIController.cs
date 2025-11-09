@@ -96,12 +96,10 @@ namespace QuizUpLearn.API.Controllers
                     }
 
                     var validateResult = await aiService.ValidateQuizSetAsync(result.Id);
-                    
-                    Console.WriteLine($"QuizSet Id: {result.Id}, Validation: {validateResult.Item1}, Feedback: {validateResult.Item2}");
 
                     if (!validateResult.Item1)
                     {
-                        await hubContext.Clients.All.SendAsync("JobCompleted", new
+                        await hubContext.Clients.Group(jobId.ToString()).SendAsync("JobFailed", new
                         {
                             JobId = jobId,
                             Error = "Invalid quiz set: " + validateResult.Item2
@@ -109,7 +107,7 @@ namespace QuizUpLearn.API.Controllers
                     }
                     else
                     {
-                        await hubContext.Clients.All.SendAsync("JobCompleted", new
+                        await hubContext.Clients.Group(jobId.ToString()).SendAsync("JobCompleted", new
                         {
                             JobId = jobId,
                             Result = result
@@ -118,7 +116,7 @@ namespace QuizUpLearn.API.Controllers
                 }
                 catch (Exception ex)
                 {
-                    await hubContext.Clients.All.SendAsync("JobFailed", new
+                    await hubContext.Clients.Group(jobId.ToString()).SendAsync("JobFailed", new
                     {
                         JobId = jobId,
                         Error = ex.Message

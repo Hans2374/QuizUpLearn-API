@@ -6,29 +6,22 @@ class Program
     {
         Console.WriteLine("Starting SignalR Client...");
 
-        // Replace with your actual SignalR hub URL
+        Console.WriteLine("Enter Job ID to monitor:");
+        string jobId = Console.ReadLine();
+        Console.WriteLine($"Monitoring Job ID: {jobId}");
+
         var hubUrl = "https://localhost:7247/background-jobs";
 
-        // Create a connection to the SignalR hub
         var connection = new HubConnectionBuilder()
             .WithUrl(hubUrl)
-            .WithAutomaticReconnect() // Automatically reconnect on disconnection
+            .WithAutomaticReconnect()
             .Build();
 
-        // Event listener for the "Connected" event
-        connection.On<string>("Connected", message =>
-        {
-            Console.WriteLine($"Message from server: {message}");
-        });
-
-        // Event listener for the "JobCompleted" event
         connection.On<object>("JobCompleted", job =>
         {
             Console.WriteLine("Job Completed:");
             Console.WriteLine(job);
         });
-
-        // Event listener for the "JobFailed" event
         connection.On<object>("JobFailed", job =>
         {
             Console.WriteLine("Job Failed:");
@@ -37,12 +30,13 @@ class Program
 
         try
         {
-            // Start the connection
             await connection.StartAsync();
             Console.WriteLine("Connected to SignalR hub!");
 
-            // Keep the client running
-            Console.WriteLine("Press any key to exit...");
+            await connection.InvokeAsync("JoinJobGroup", jobId);
+            Console.WriteLine($"Joined job group: {jobId}");
+
+            Console.WriteLine("Listening for job updates... Press any key to exit.");
             Console.ReadKey();
         }
         catch (Exception ex)
