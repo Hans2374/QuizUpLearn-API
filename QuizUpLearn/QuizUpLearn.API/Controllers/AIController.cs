@@ -2,10 +2,8 @@
 using BusinessLogic.DTOs.QuizSetDtos;
 using BusinessLogic.Helpers;
 using BusinessLogic.Interfaces;
-using BusinessLogic.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.EntityFrameworkCore;
 using QuizUpLearn.API.Hubs;
 
 namespace QuizUpLearn.API.Controllers
@@ -16,13 +14,11 @@ namespace QuizUpLearn.API.Controllers
     {
         private readonly IAIService _aiService;
         private readonly IWorkerService _workerService;
-        private readonly IHubContext<BackgroundJobHub> _hubContext;
 
-        public AIController(IAIService aiService, IWorkerService workerService, IHubContext<BackgroundJobHub> hubContext)
+        public AIController(IAIService aiService, IWorkerService workerService)
         {
             _aiService = aiService;
             _workerService = workerService;
-            _hubContext = hubContext;
         }
         /// <summary>
         /// This endpoint validates an existing quiz set by its ID.
