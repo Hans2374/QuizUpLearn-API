@@ -9,5 +9,6 @@
         public int TimesWrong { get; set; }
         public DateTime LastAttemptedAt { get; set; }
         public bool IsAnalyzed { get; set; }
+        public string? UserAnswer { get; set; }
     }
 }

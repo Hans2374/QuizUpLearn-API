@@ -39,4 +39,9 @@ namespace BusinessLogic.DTOs.AiDtos
         public VoiceRoles Role { get; set; }
         public string Text { get; set; }
     }
+    public class AiAnalyzeWeakpointResponseDto
+    {
+        public string Weakpoint { get; set; }
+        public string Advice { get; set; }
+    }
 }

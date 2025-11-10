@@ -70,5 +70,12 @@ namespace Repository.Repositories
                 await _context.SaveChangesAsync();
             }
         }
+
+        public async Task<IEnumerable<UserMistake>> GetAlByUserIdAsync(Guid userId)
+        {
+            return await _context.UserMistakes
+                .Where(um => um.UserId == userId)
+                .ToListAsync();
+        }
     }
 }

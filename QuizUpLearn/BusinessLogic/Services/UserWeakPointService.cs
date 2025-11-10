@@ -1,0 +1,51 @@
+﻿using AutoMapper;
+using BusinessLogic.DTOs.UserWeakPointDtos;
+using BusinessLogic.Interfaces;
+using Repository.Entities;
+using Repository.Interfaces;
+
+namespace BusinessLogic.Services
+{
+    public class UserWeakPointService : IUserWeakPointService
+    {
+        private readonly IUserWeakPointRepo _repo;
+        private readonly IMapper _mapper;
+
+        public UserWeakPointService(IUserWeakPointRepo repo, IMapper mapper)
+        {
+            _repo = repo;
+            _mapper = mapper;
+        }
+
+        public async Task<IEnumerable<ResponseUserWeakPointDto>> GetByUserIdAsync(Guid userId)
+        {
+            var entities = await _repo.GetByUserIdAsync(userId);
+            return _mapper.Map<IEnumerable<ResponseUserWeakPointDto>>(entities);
+        }
+
+        public async Task<ResponseUserWeakPointDto?> GetByIdAsync(Guid id)
+        {
+            var entity = await _repo.GetByIdAsync(id);
+            return entity == null ? null : _mapper.Map<ResponseUserWeakPointDto>(entity);
+        }
+
+        public async Task<ResponseUserWeakPointDto?> AddAsync(RequestUserWeakPointDto dto)
+        {
+            var entity = _mapper.Map<UserWeakPoint>(dto);
+            var result = await _repo.AddAsync(entity);
+            return result == null ? null : _mapper.Map<ResponseUserWeakPointDto>(result);
+        }
+
+        public async Task<ResponseUserWeakPointDto?> UpdateAsync(Guid id, RequestUserWeakPointDto dto)
+        {
+            var entity = _mapper.Map<UserWeakPoint>(dto);
+            var result = await _repo.UpdateAsync(id, entity);
+            return result == null ? null : _mapper.Map<ResponseUserWeakPointDto>(result);
+        }
+
+        public async Task<bool> DeleteAsync(Guid id)
+        {
+            return await _repo.DeleteAsync(id);
+        }
+    }
+}

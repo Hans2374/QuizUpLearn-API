@@ -8,5 +8,6 @@
         public int TimesWrong { get; set; } = 0;
         public DateTime LastAttemptedAt { get; set; } = DateTime.UtcNow;
         public bool IsAnalyzed { get; set; } = false;
+        public string? UserAnswer { get; set; }
     }
 }

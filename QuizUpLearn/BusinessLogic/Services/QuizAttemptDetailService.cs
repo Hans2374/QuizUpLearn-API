@@ -80,7 +80,7 @@ namespace BusinessLogic.Services
             int wrongCount = 0;
             int totalTimeSpent = 0;
             var answerResults = new List<AnswerResultDto>();
-
+            var wrongUserAnswers = new Dictionary<Guid, string>(); //quizId, userAnswer
             // Lưu và chấm điểm từng câu trả lời
             foreach (var answer in dto.Answers)
             {
@@ -126,7 +126,7 @@ namespace BusinessLogic.Services
                 };
 
                 await _repo.CreateAsync(detail);
-
+                
                 // Tính tổng thời gian
                 if (answer.TimeSpent.HasValue)
                 {
@@ -140,6 +140,7 @@ namespace BusinessLogic.Services
                 }
                 else
                 {
+                    wrongUserAnswers.Add(answer.QuestionId, answer.UserAnswer);
                     wrongCount++;
                 }
 
@@ -185,6 +186,7 @@ namespace BusinessLogic.Services
                         .Select(ar => ar.QuestionId)
                         .Distinct()
                         .ToList();
+                    
 
                     if (wrongQuestionIds.Any() && attempt.UserId != Guid.Empty)
                     {
@@ -203,7 +205,8 @@ namespace BusinessLogic.Services
                                     TimesAttempted = 1,
                                     TimesWrong = 1,
                                     LastAttemptedAt = DateTime.UtcNow,
-                                    IsAnalyzed = false
+                                    IsAnalyzed = false,
+                                    UserAnswer = wrongUserAnswers[quizId]
                                 });
                             }
                             else

@@ -5,6 +5,7 @@ namespace Repository.Interfaces
     public interface IUserMistakeRepo
     {
         Task<IEnumerable<UserMistake>> GetAllAsync();
+        Task<IEnumerable<UserMistake>> GetAlByUserIdAsync(Guid userId);
         Task<UserMistake?> GetByIdAsync(Guid id);
         Task<UserMistake?> GetByUserIdAndQuizIdAsync(Guid userId, Guid quizId);
         Task AddAsync(UserMistake userMistake);
