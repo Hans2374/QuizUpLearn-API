@@ -20,6 +20,12 @@ namespace QuizUpLearn.API.Controllers
             var userMistakes = await _userMistakeService.GetAllAsync();
             return Ok(userMistakes);
         }
+        [HttpGet("user/{userId:guid}")]
+        public async Task<IActionResult> GetAllByUserId(Guid userId)
+        {
+            var userMistakes = await _userMistakeService.GetAllByUserIdAsync(userId);
+            return Ok(userMistakes);
+        }
         [HttpGet("{id:guid}")]
         public async Task<IActionResult> GetById(Guid id)
         {

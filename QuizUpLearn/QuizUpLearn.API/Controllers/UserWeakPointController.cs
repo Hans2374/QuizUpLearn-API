@@ -1,0 +1,57 @@
+﻿using Microsoft.AspNetCore.Mvc;
+using BusinessLogic.DTOs.UserWeakPointDtos;
+using BusinessLogic.Interfaces;
+
+namespace QuizUpLearn.API.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    public class UserWeakPointController : ControllerBase
+    {
+        private readonly IUserWeakPointService _service;
+
+        public UserWeakPointController(IUserWeakPointService service)
+        {
+            _service = service;
+        }
+
+        [HttpGet("user/{userId}")]
+        public async Task<ActionResult<IEnumerable<ResponseUserWeakPointDto>>> GetByUserId(Guid userId)
+        {
+            var result = await _service.GetByUserIdAsync(userId);
+            return Ok(result);
+        }
+
+        [HttpGet("{id}")]
+        public async Task<ActionResult<ResponseUserWeakPointDto>> GetById(Guid id)
+        {
+            var result = await _service.GetByIdAsync(id);
+            if (result == null) return NotFound();
+            return Ok(result);
+        }
+
+        [HttpPost]
+        public async Task<ActionResult<ResponseUserWeakPointDto>> Add(RequestUserWeakPointDto dto)
+        {
+            var result = await _service.AddAsync(dto);
+            if (result == null) return BadRequest();
+            return CreatedAtAction(nameof(GetById), new { id = result.Id }, result);
+        }
+
+        [HttpPut("{id}")]
+        public async Task<ActionResult<ResponseUserWeakPointDto>> Update(Guid id, RequestUserWeakPointDto dto)
+        {
+            var result = await _service.UpdateAsync(id, dto);
+            if (result == null) return NotFound();
+            return Ok(result);
+        }
+
+        [HttpDelete]
+        public async Task<ActionResult> Delete(Guid id)
+        {
+            var success = await _service.DeleteAsync(id);
+            if (!success) return NotFound();
+            return NoContent();
+        }
+    }
+}

@@ -58,6 +58,10 @@ namespace BusinessLogic.MappingProfile
             CreateMap<Repository.Entities.QuizGroupItem, DTOs.QuizGroupItemDtos.RequestQuizGroupItemDto>().ReverseMap();
             CreateMap<Repository.Entities.QuizGroupItem, DTOs.QuizGroupItemDtos.ResponseQuizGroupItemDto>().ReverseMap();
             //Add other mappings here as needed
+
+            // UserWeakPoint Mappings
+            CreateMap<Repository.Entities.UserWeakPoint, DTOs.UserWeakPointDtos.ResponseUserWeakPointDto>().ReverseMap();
+            CreateMap<Repository.Entities.UserWeakPoint, DTOs.UserWeakPointDtos.RequestUserWeakPointDto>().ReverseMap();
         }
     }
 }

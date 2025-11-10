@@ -15,12 +15,12 @@ namespace Repository.Entities
         public int TotalPoints { get; set; }
         public string? PreferredLanguage { get; set; }
         public string? Timezone { get; set; }
-        public List<string>? WeakPoints { get; set; } = new List<string>();
 
         // Navigation
         public virtual Account? Account { get; set; }
         public virtual ICollection<QuizSet> CreatedQuizSets { get; set; } = new List<QuizSet>();
         public virtual ICollection<QuizAttempt> QuizAttempts { get; set; } = new List<QuizAttempt>();
         public virtual ICollection<UserMistake> UserMistakes { get; set; } = new List<UserMistake>();
+        public virtual ICollection<UserWeakPoint> UserWeakPoints { get; set; } = new List<UserWeakPoint>();
     }
 }

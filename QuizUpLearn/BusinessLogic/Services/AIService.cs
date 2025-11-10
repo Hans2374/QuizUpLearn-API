@@ -3,6 +3,7 @@ using BusinessLogic.DTOs.AiDtos;
 using BusinessLogic.DTOs.QuizDtos;
 using BusinessLogic.DTOs.QuizGroupItemDtos;
 using BusinessLogic.DTOs.QuizSetDtos;
+using BusinessLogic.DTOs.UserWeakPointDtos;
 using BusinessLogic.Helpers;
 using BusinessLogic.Interfaces;
 using Microsoft.Extensions.Configuration;
@@ -24,6 +25,8 @@ namespace BusinessLogic.Services
         private readonly IUploadService _uploadService;
         private readonly ILogger<AIService> _logger;
         private readonly IQuizGroupItemService _quizGroupItemService;
+        private readonly IUserMistakeService _userMistakeService;
+        private readonly IUserWeakPointService _userWeakPointService;
         //API keys
         private readonly string _geminiApiKey;
         private readonly string _openRouterApiKey;
@@ -33,7 +36,7 @@ namespace BusinessLogic.Services
         private readonly string _maleVoiceId;
         private readonly string _femaleVoiceId;
         private readonly string _narratorVoiceId;
-        public AIService(HttpClient httpClient, IConfiguration configuration, IQuizSetService quizSetService, IQuizService quizService, IAnswerOptionService answerOptionService, IUploadService uploadService, ILogger<AIService> logger, IQuizGroupItemService quizGroupItemService)
+        public AIService(HttpClient httpClient, IConfiguration configuration, IQuizSetService quizSetService, IQuizService quizService, IAnswerOptionService answerOptionService, IUploadService uploadService, ILogger<AIService> logger, IQuizGroupItemService quizGroupItemService, IUserMistakeService userMistakeService, IUserWeakPointService userWeakPointService)
         {
             _httpClient = httpClient;
             _quizSetService = quizSetService;
@@ -42,6 +45,8 @@ namespace BusinessLogic.Services
             _uploadService = uploadService;
             _logger = logger;
             _quizGroupItemService = quizGroupItemService;
+            _userMistakeService = userMistakeService;
+            _userWeakPointService = userWeakPointService;
 
             //API keys
             _geminiApiKey = configuration["Gemini:ApiKey"] ?? throw new ArgumentNullException("Gemini API key is not configured.");
@@ -53,12 +58,6 @@ namespace BusinessLogic.Services
             _maleVoiceId = configuration["AsyncTTS:Voices:Male"] ?? throw new ArgumentNullException("Male voice id is not configured");
             _femaleVoiceId = configuration["AsyncTTS:Voices:Female"] ?? throw new ArgumentNullException("Female voice id is not configured"); ;
             _narratorVoiceId = configuration["AsyncTTS:Voices:Narrator"] ?? throw new ArgumentNullException("Narrator voice id is not configured");
-            
-        }
-
-        public Task AnalyzeUserProgress()
-        {
-            throw new NotImplementedException();
         }
 
         private async Task<string> GeminiGenerateContentAsync(string prompt)
@@ -273,6 +272,7 @@ namespace BusinessLogic.Services
 
             return combinedStream.ToArray();
         }
+        
         public async Task<(bool, string)> ValidateQuizSetAsync(Guid quizSetId)
         {
             var quizSet = await _quizSetService.GetQuizSetByIdAsync(quizSetId);
@@ -427,7 +427,7 @@ Only return in this structure no need any extended field/infor:
                 {
                     QuizSetId = createdQuizSet.Id,
                     QuestionText = quiz.QuestionText,
-                    TOEICPart = "Part 1",
+                    TOEICPart = QuizPartEnums.PART1.ToString(),
                     AudioURL = audioResult.Url,
                     ImageURL = imageResult.Url
                 });
@@ -506,7 +506,7 @@ Only return in this structure no need any extended field/infor:
                 {
                     QuizSetId = createdQuizSet.Id,
                     QuestionText = "",
-                    TOEICPart = "Part 2",
+                    TOEICPart = QuizPartEnums.PART2.ToString(),
                     AudioURL = audioResult.Url
                 });
 
@@ -614,7 +614,7 @@ Only return in this structure no need any extended field/infor:
                     {
                         QuizSetId = createdQuizSet.Id,
                         QuestionText = quiz.QuestionText,
-                        TOEICPart = "Part 3",
+                        TOEICPart = QuizPartEnums.PART3.ToString(),
                         QuizGroupItemId = groupItem.Id
                     });
 
@@ -721,7 +721,7 @@ Only return in this structure no need any extended field/infor:
                     {
                         QuizSetId = createdQuizSet.Id,
                         QuestionText = quiz.QuestionText,
-                        TOEICPart = "Part 3",
+                        TOEICPart = QuizPartEnums.PART4.ToString(),
                         QuizGroupItemId = groupItem.Id
                     });
 
@@ -791,7 +791,7 @@ Only return in this structure no need any extended field/infor:
                 {
                     QuizSetId = createdQuizSet.Id,
                     QuestionText = quiz.QuestionText,
-                    TOEICPart = "Part 5",
+                    TOEICPart = QuizPartEnums.PART5.ToString(),
                     CorrectAnswer = quiz.AnswerOptions.FirstOrDefault(o => o.IsCorrect)!.OptionLabel,
                 });
 
@@ -894,7 +894,7 @@ Only return in this structure no need any extended field/infor:
                     {
                         QuizSetId = createdQuizSet.Id,
                         QuestionText = j.ToString(),
-                        TOEICPart = "Part 6",
+                        TOEICPart = QuizPartEnums.PART6.ToString(),
                         QuizGroupItemId = groupItem.Id
                     });
                     //Create answer options
@@ -1007,7 +1007,7 @@ Return JSON:
                     {
                         QuizSetId = createdQuizSet.Id,
                         QuestionText = quiz.QuestionText,
-                        TOEICPart = "Part 7",
+                        TOEICPart = QuizPartEnums.PART7.ToString(),
                         QuizGroupItemId = groupItem.Id
                     });
 
@@ -1025,6 +1025,84 @@ Return JSON:
             }
 
             return createdQuizSet;
+        }
+
+        public async Task AnalyzeUserMistakesAndAdviseAsync(Guid userId)
+        {
+            var userMistakes = await _userMistakeService.GetAllByUserIdAsync(userId);
+
+            foreach (var mistake in userMistakes)
+            {
+                if (mistake.IsAnalyzed) continue;
+                //Trace back to quiz and quiz set
+                var quiz = await _quizService.GetQuizByIdAsync(mistake.QuizId);
+                if (quiz == null) continue;
+                var quizSet = await _quizSetService.GetQuizSetByIdAsync(quiz.QuizSetId);
+                if (quizSet == null) continue;
+                var answers = await _answerOptionService.GetByQuizIdAsync(quiz.Id);
+                if( answers == null || answers.Count() == 0) continue;
+
+                var answersText = string.Join("\n", answers.Select(a => $"{a.OptionLabel}. {a.OptionText} (Correct: {a.IsCorrect})"));
+
+                var userWeakPoints = await _userWeakPointService.GetByUserIdAsync(userId);
+                if (userWeakPoints == null || userWeakPoints.Count() == 0) continue;
+
+                var existingWeakPoints = string.Empty;
+                var existingAdvices = string.Empty;
+
+                foreach (var wp in userWeakPoints)
+                {
+                    existingWeakPoints += ", " + wp.WeakPoint;
+
+                    if (!string.IsNullOrEmpty(wp.Advice))
+                        existingAdvices += ", " + wp.Advice;
+                }
+
+                var prompt = $@"This is a TOEIC practice quiz with the following details:
+Topic: {quizSet.Title}
+TOIEC part: {quiz.TOEICPart}
+Question: {quiz.QuestionText}
+Answer options : {answersText}
+User's wrong answer: {mistake.UserAnswer}
+
+Provide ONE single weakpoint(weak area of skill) out of this question and ONE single advice for the user how to improve in this area.
+
+Avoid duplicated weakpoint(s) if any: {existingWeakPoints}
+
+Avoid duplicated advice(s) if any: {existingAdvices}
+
+If it is duplicated weakpoints just return empty strings for both fields.
+
+Return in JSON:
+{{
+  ""WeakPoint"": ""..."",
+  ""Advice"": ""...""
+}}";
+                var response = await GeminiGenerateContentAsync(prompt);
+                var analysisResult = JsonSerializer.Deserialize<AiAnalyzeWeakpointResponseDto>(response);
+
+                if (analysisResult == null
+                    || string.IsNullOrEmpty(analysisResult.Weakpoint)
+                    || string.IsNullOrEmpty(analysisResult.Advice))
+                {
+                    Console.WriteLine("No new weakpoint or advice generated.");
+                    continue;
+                }
+
+                //Create new UserWeakPoint
+                var newUserWeakPoint = await _userWeakPointService.AddAsync(new RequestUserWeakPointDto
+                {
+                    UserId = userId,
+                    WeakPoint = analysisResult.Weakpoint,
+                    Advice = analysisResult.Advice,
+                    IsDone = false
+                });
+            }
+        }
+
+        public Task<QuizSetResponseDto> GenerateFixWeakPointQuizSetAsync()
+        {
+            throw new NotImplementedException();
         }
     }
 }

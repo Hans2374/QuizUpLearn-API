@@ -44,5 +44,11 @@ namespace BusinessLogic.Services
         {
             await _repo.DeleteAsync(id);
         }
+
+        public async Task<IEnumerable<ResponseUserMistakeDto>> GetAllByUserIdAsync(Guid userId)
+        {
+            var userMistakes = await _repo.GetAlByUserIdAsync(userId);
+            return _mapper.Map<IEnumerable<ResponseUserMistakeDto>>(userMistakes);
+        }
     }
 }
