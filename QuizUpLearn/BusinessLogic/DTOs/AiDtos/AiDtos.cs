@@ -41,7 +41,7 @@ namespace BusinessLogic.DTOs.AiDtos
     }
     public class AiAnalyzeWeakpointResponseDto
     {
-        public string Weakpoint { get; set; }
+        public string WeakPoint { get; set; }
         public string Advice { get; set; }
     }
 }

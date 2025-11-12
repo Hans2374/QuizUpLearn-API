@@ -3,6 +3,7 @@ using BusinessLogic.DTOs.AiDtos;
 using BusinessLogic.DTOs.QuizDtos;
 using BusinessLogic.DTOs.QuizGroupItemDtos;
 using BusinessLogic.DTOs.QuizSetDtos;
+using BusinessLogic.DTOs.UserMistakeDtos;
 using BusinessLogic.DTOs.UserWeakPointDtos;
 using BusinessLogic.Helpers;
 using BusinessLogic.Interfaces;
@@ -1104,6 +1105,8 @@ Return JSON:
         public async Task<PaginationResponseDto<ResponseUserWeakPointDto>> AnalyzeUserMistakesAndAdviseAsync(Guid userId)
         {
             var userMistakes = await _userMistakeService.GetAllByUserIdAsync(userId, null!);
+            var existingWeakPoints = string.Empty;
+            var existingAdvices = string.Empty;
 
             foreach (var mistake in userMistakes.Data)
             {
@@ -1116,20 +1119,18 @@ Return JSON:
                 var answers = await _answerOptionService.GetByQuizIdAsync(quiz.Id);
                 if( answers == null || answers.Count() == 0) continue;
 
-                var answersText = string.Join("\n", answers.Select(a => $"{a.OptionLabel}. {a.OptionText} (Correct: {a.IsCorrect})"));
+                string answersText = string.Empty;
+                answersText = string.Join("\n", answers.Select(a => $"{a.OptionLabel}. {a.OptionText} (Correct: {a.IsCorrect})"));
 
                 var userWeakPoints = await _userWeakPointService.GetByUserIdAsync(userId, null!);
-                if (userWeakPoints == null || userWeakPoints.Data.Count() == 0) continue;
-
-                var existingWeakPoints = string.Empty;
-                var existingAdvices = string.Empty;
 
                 foreach (var wp in userWeakPoints.Data)
                 {
-                    existingWeakPoints += ", " + wp.WeakPoint;
+                    if (userWeakPoints == null || userWeakPoints.Data.Count() == 0) continue;
+                    existingWeakPoints += wp.WeakPoint + ", ";
 
                     if (!string.IsNullOrEmpty(wp.Advice))
-                        existingAdvices += ", " + wp.Advice;
+                        existingAdvices += wp.Advice + ", ";
                 }
 
                 var prompt = $@"This is a TOEIC practice quiz with the following details:
@@ -1153,10 +1154,22 @@ Return in JSON:
   ""Advice"": ""...""
 }}";
                 var response = await GeminiGenerateContentAsync(prompt);
-                var analysisResult = JsonSerializer.Deserialize<AiAnalyzeWeakpointResponseDto>(response);
+
+                AiAnalyzeWeakpointResponseDto? analysisResult;
+                try
+                {
+                    analysisResult = JsonSerializer.Deserialize<AiAnalyzeWeakpointResponseDto>(response);
+                    if (analysisResult == null || string.IsNullOrEmpty(analysisResult.WeakPoint))
+                        throw new JsonException("Failed to generate valid analysis data from AI.");
+                }
+                catch(Exception ex)
+                {
+                    Console.WriteLine($"Invalid AI JSON: {ex.Message}");
+                    continue;
+                }
 
                 if (analysisResult == null
-                    || string.IsNullOrEmpty(analysisResult.Weakpoint)
+                    || string.IsNullOrEmpty(analysisResult.WeakPoint)
                     || string.IsNullOrEmpty(analysisResult.Advice))
                 {
                     Console.WriteLine("No new weakpoint or advice generated.");
@@ -1167,12 +1180,15 @@ Return in JSON:
                 var newUserWeakPoint = await _userWeakPointService.AddAsync(new RequestUserWeakPointDto
                 {
                     UserId = userId,
-                    WeakPoint = analysisResult.Weakpoint,
+                    WeakPoint = analysisResult.WeakPoint,
                     Advice = analysisResult.Advice,
                     IsDone = false
                 });
-                
-                
+
+                await _userMistakeService.UpdateAsync(mistake.Id, new RequestUserMistakeDto
+                {
+                    IsAnalyzed = true
+                });
             }
 
             return await _userWeakPointService.GetByUserIdAsync(userId, null!);
