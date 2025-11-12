@@ -19,8 +19,9 @@ namespace BusinessLogic.Services
             _mapper = mapper;
         }
 
-        public async Task<PaginationResponseDto<ResponseUserWeakPointDto>> GetByUserIdAsync(Guid userId, PaginationRequestDto pagination)
+        public async Task<PaginationResponseDto<ResponseUserWeakPointDto>> GetByUserIdAsync(Guid userId, PaginationRequestDto pagination = null!)
         {
+            pagination ??= new PaginationRequestDto();
             var entities = await _repo.GetByUserIdAsync(userId);
             var dtos = _mapper.Map<IEnumerable<ResponseUserWeakPointDto>>(entities);
             return dtos.ToPagedResponse(pagination);
