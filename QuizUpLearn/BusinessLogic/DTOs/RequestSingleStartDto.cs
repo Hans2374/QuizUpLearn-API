@@ -4,7 +4,6 @@ namespace BusinessLogic.DTOs
     {
         public required Guid UserId { get; set; }
         public required Guid QuizSetId { get; set; }
-        public int NumQuestions { get; set; } = 0; // 0 or less means use all available
     }
 }
 

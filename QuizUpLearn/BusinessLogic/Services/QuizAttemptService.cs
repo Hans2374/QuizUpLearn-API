@@ -3,6 +3,7 @@ using BusinessLogic.DTOs;
 using BusinessLogic.Interfaces;
 using Repository.Entities;
 using Repository.Interfaces;
+using System.Linq;
 
 namespace BusinessLogic.Services
 {
@@ -11,14 +12,16 @@ namespace BusinessLogic.Services
         private readonly IQuizAttemptRepo _repo;
         private readonly IQuizAttemptDetailRepo _detailRepo;
         private readonly IQuizRepo _quizRepo;
+        private readonly IQuizSetRepo _quizSetRepo;
         private readonly IAnswerOptionRepo _answerOptionRepo;
         private readonly IMapper _mapper;
 
-        public QuizAttemptService(IQuizAttemptRepo repo, IQuizAttemptDetailRepo detailRepo, IQuizRepo quizRepo, IAnswerOptionRepo answerOptionRepo, IMapper mapper)
+        public QuizAttemptService(IQuizAttemptRepo repo, IQuizAttemptDetailRepo detailRepo, IQuizRepo quizRepo, IQuizSetRepo quizSetRepo, IAnswerOptionRepo answerOptionRepo, IMapper mapper)
         {
             _repo = repo;
             _detailRepo = detailRepo;
             _quizRepo = quizRepo;
+            _quizSetRepo = quizSetRepo;
             _answerOptionRepo = answerOptionRepo;
             _mapper = mapper;
         }
@@ -32,12 +35,23 @@ namespace BusinessLogic.Services
 
         public async Task<ResponseSingleStartDto> StartSingleAsync(RequestSingleStartDto dto)
         {
+            // Fetch QuizSet với QuizGroupItems đã include
+            var quizSet = await _quizSetRepo.GetQuizSetByIdAsync(dto.QuizSetId);
+            if (quizSet == null)
+            {
+                throw new InvalidOperationException("QuizSet not found");
+            }
+
             // Fetch ALL questions for the quiz set (no subset selection)
             var allQuestions = await _quizRepo.GetQuizzesByQuizSetIdAsync(dto.QuizSetId);
             var selected = allQuestions
                 .OrderBy(q => q.OrderIndex ?? int.MaxValue)
                 .ThenBy(q => q.CreatedAt)
                 .ToList();
+
+            // Lấy QuizGroupItems trực tiếp từ QuizSet (đã include sẵn)
+            var quizGroupItems = quizSet.QuizGroupItems?.Where(qgi => qgi.DeletedAt == null).ToList() ?? new List<Repository.Entities.QuizGroupItem>();
+            var quizGroupItemDtos = _mapper.Map<IEnumerable<BusinessLogic.DTOs.QuizGroupItemDtos.ResponseQuizGroupItemDto>>(quizGroupItems).ToList();
 
             // Create attempt in progress
             var attempt = new QuizAttempt
@@ -65,7 +79,8 @@ namespace BusinessLogic.Services
             {
                 AttemptId = created.Id,
                 TotalQuestions = created.TotalQuestions,
-                Questions = quizDtos
+                Questions = quizDtos,
+                QuizGroupItems = quizGroupItemDtos
             };
         }
 
