@@ -56,7 +56,8 @@ namespace QuizUpLearn.API.Middlewares
                     return;
                 }
 
-                bool hasDataProperty = false;
+                // Kiểm tra xem response đã có cấu trúc ApiResponse chưa (có property "success")
+                bool isAlreadyWrapped = false;
                 try
                 {
                     if (!string.IsNullOrWhiteSpace(body))
@@ -64,21 +65,21 @@ namespace QuizUpLearn.API.Middlewares
                         using var doc = JsonDocument.Parse(body);
                         var root = doc.RootElement;
                         if (root.ValueKind == JsonValueKind.Object &&
-                            root.TryGetProperty("data", out _))
+                            root.TryGetProperty("success", out _))
                         {
-                            hasDataProperty = true;
+                            isAlreadyWrapped = true;
                         }
                     }
                 }
                 catch
                 {
-                    // Ignore parse errors, treat as not having data property
+                    // Ignore parse errors, treat as not wrapped
                 }
 
                 string json;
-                if (hasDataProperty)
+                if (isAlreadyWrapped)
                 {
-                    json = body; // Do not wrap
+                    json = body; // Đã được bọc rồi, không bọc lại
                 }
                 else
                 {

@@ -1,12 +1,7 @@
 namespace BusinessLogic.DTOs
 {
-    public class PaginationResponseDto<T>
+    public class PaginationMetadata
     {
-        /// <summary>
-        /// The paginated data items
-        /// </summary>
-        public List<T> Data { get; set; } = new List<T>();
-
         /// <summary>
         /// Current page number (1-based)
         /// </summary>
@@ -51,6 +46,19 @@ namespace BusinessLogic.DTOs
         /// Sort direction used
         /// </summary>
         public string? SortDirection { get; set; }
+    }
+
+    public class PaginationResponseDto<T>
+    {
+        /// <summary>
+        /// The paginated data items
+        /// </summary>
+        public List<T> Data { get; set; } = new List<T>();
+
+        /// <summary>
+        /// Pagination metadata
+        /// </summary>
+        public PaginationMetadata Pagination { get; set; } = new PaginationMetadata();
 
         /// <summary>
         /// Creates a pagination response from the request and total count
@@ -62,15 +70,18 @@ namespace BusinessLogic.DTOs
             return new PaginationResponseDto<T>
             {
                 Data = data,
-                CurrentPage = request.Page,
-                PageSize = request.PageSize,
-                TotalCount = totalCount,
-                TotalPages = totalPages,
-                HasPreviousPage = request.Page > 1,
-                HasNextPage = request.Page < totalPages,
-                SearchTerm = request.SearchTerm,
-                SortBy = request.SortBy,
-                SortDirection = request.GetNormalizedSortDirection()
+                Pagination = new PaginationMetadata
+                {
+                    CurrentPage = request.Page,
+                    PageSize = request.PageSize,
+                    TotalCount = totalCount,
+                    TotalPages = totalPages,
+                    HasPreviousPage = request.Page > 1,
+                    HasNextPage = request.Page < totalPages,
+                    SearchTerm = request.SearchTerm,
+                    SortBy = request.SortBy,
+                    SortDirection = request.GetNormalizedSortDirection()
+                }
             };
         }
     }
