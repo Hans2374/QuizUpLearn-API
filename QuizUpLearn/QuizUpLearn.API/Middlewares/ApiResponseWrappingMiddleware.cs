@@ -58,16 +58,31 @@ namespace QuizUpLearn.API.Middlewares
 
                 // Kiểm tra xem response đã có cấu trúc ApiResponse chưa (có property "success")
                 bool isAlreadyWrapped = false;
+                bool isPaginationResponse = false;
+                object? paginationData = null;
+                object? responseData = null;
+
                 try
                 {
                     if (!string.IsNullOrWhiteSpace(body))
                     {
                         using var doc = JsonDocument.Parse(body);
                         var root = doc.RootElement;
-                        if (root.ValueKind == JsonValueKind.Object &&
-                            root.TryGetProperty("success", out _))
+                        if (root.ValueKind == JsonValueKind.Object)
                         {
-                            isAlreadyWrapped = true;
+                            if (root.TryGetProperty("success", out _))
+                            {
+                                isAlreadyWrapped = true;
+                            }
+                            // Kiểm tra xem có phải PaginationResponseDto không (có cả "data" và "pagination")
+                            else if (root.TryGetProperty("data", out var dataProp) && 
+                                     root.TryGetProperty("pagination", out var paginationProp))
+                            {
+                                isPaginationResponse = true;
+                                // Deserialize ngay trong block using để tránh dispose
+                                responseData = JsonSerializer.Deserialize<object>(dataProp.GetRawText());
+                                paginationData = JsonSerializer.Deserialize<object>(paginationProp.GetRawText());
+                            }
                         }
                     }
                 }
@@ -80,6 +95,18 @@ namespace QuizUpLearn.API.Middlewares
                 if (isAlreadyWrapped)
                 {
                     json = body; // Đã được bọc rồi, không bọc lại
+                }
+                else if (isPaginationResponse)
+                {
+                    // Xử lý đặc biệt cho PaginationResponseDto: tách data và pagination ra ngoài
+                    var wrapped = new
+                    {
+                        success = true,
+                        data = responseData,
+                        pagination = paginationData,
+                        message = (string?)null
+                    };
+                    json = JsonSerializer.Serialize(wrapped);
                 }
                 else
                 {
