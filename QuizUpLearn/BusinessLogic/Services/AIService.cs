@@ -316,7 +316,9 @@ suitable for learners with TOEIC scores around {quizSet.DifficultyLevel}.
 ### Quiz to Validate
 Additional info(if any):
 - Passage: {groupPassage}
+
 - Audio script: {groupAudioScript}
+
 - Image description: {groupImageDescription}
 
 Question: {quiz.QuestionText}
@@ -324,13 +326,13 @@ Question: {quiz.QuestionText}
 Options:
 {string.Join("\n", options.Select(o => $"{o.OptionLabel}. {o.OptionText} (Correct: {o.IsCorrect})"))}
 
-Check the criteria and explain shortly at Feedback field if the question is invalid:
+Check the criteria and :
 1. The question is grammatically correct and meaningful.
 2. There is ONE or more correct answer.
 3. The correct answer makes sense in context.
 4. Not duplicating or very similar options.
 5. If it is TOEIC part 2, question text and option text will be null because of that all you need to check the audio script, inside that audio script it will have the question and the answer options.
-6. No need suggestion improvement, only validate correctness.
+6. No need suggestion improvement, only validate correctness, explain shortly at Feedback field if the question is invalid otherwise return feedback with empty string.
 
 Return only these 2 fields as JSON structure:
 {{ 
@@ -398,7 +400,8 @@ Only return in this structure no need any extended field/infor:
   ]
 }}";
                 var response = await GeminiGenerateContentAsync(prompt);
-                previousImageDescription += response + "\n";
+                
+
                 AiGenerateQuizResponseDto? quiz;
                 try
                 {
@@ -409,6 +412,8 @@ Only return in this structure no need any extended field/infor:
                         || quiz.ImageDescription == null
                         || quiz.AnswerOptions.Count == 0)
                         throw new JsonException("Failed to generate valid quiz data from AI.");
+
+                    previousImageDescription += quiz.ImageDescription + "\n";
                 }
                 catch(Exception ex)
                 {
@@ -428,13 +433,31 @@ Only return in this structure no need any extended field/infor:
                 var audioResult = await _uploadService.UploadAsync(audioFile);
                 var imageResult = await _uploadService.UploadAsync(imageFile);
 
+                var groupItem = await _quizGroupItemService.CreateAsync(new RequestQuizGroupItemDto
+                {
+                    QuizSetId = quizSetId,
+                    Name = $"Single quiz {QuizPartEnums.PART1.ToString()}",
+                    AudioUrl = audioResult.Url,
+                    AudioScript = audioScript,
+                    ImageDescription = quiz.ImageDescription,
+                    ImageUrl = imageResult.Url
+                });
+
+                if (groupItem == null)
+                {
+                    Console.WriteLine("Failed to create quiz group item.");
+                    i--;
+                    continue;
+                }
+
                 var createdQuiz = await _quizService.CreateQuizAsync(new QuizRequestDto
                 {
                     QuizSetId = quizSetId,
                     QuestionText = quiz.QuestionText,
                     TOEICPart = QuizPartEnums.PART1.ToString(),
                     AudioURL = audioResult.Url,
-                    ImageURL = imageResult.Url
+                    ImageURL = imageResult.Url,
+                    QuizGroupItemId = groupItem.Id
                 });
 
                 foreach (var item in quiz.AnswerOptions)
@@ -507,13 +530,28 @@ Only return in this structure no need any extended field/infor:
                 var audioFile = await _uploadService.ConvertByteArrayToIFormFile(audio, $"audio-Q{i}-{inputData.CreatorId}-{DateTime.UtcNow}.mp3", "audio/mpeg");
                 
                 var audioResult = await _uploadService.UploadAsync(audioFile);
-                
+
+                var groupItem = await _quizGroupItemService.CreateAsync(new RequestQuizGroupItemDto
+                {
+                    QuizSetId = quizSetId,
+                    Name = $"Single quiz {QuizPartEnums.PART2.ToString()}",
+                    AudioUrl = audioResult.Url,
+                    AudioScript = audioScript
+                });
+
+                if (groupItem == null)
+                {
+                    Console.WriteLine("Failed to create quiz group item.");
+                    i--;
+                    continue;
+                }
                 var createdQuiz = await _quizService.CreateQuizAsync(new QuizRequestDto
                 {
                     QuizSetId = quizSetId,
                     QuestionText = "",
                     TOEICPart = QuizPartEnums.PART2.ToString(),
-                    AudioURL = audioResult.Url
+                    AudioURL = audioResult.Url,
+                    QuizGroupItemId = groupItem.Id
                 });
 
                 foreach (var item in quiz.AnswerOptions)
@@ -1133,6 +1171,10 @@ Return JSON:
                         existingAdvices += wp.Advice + ", ";
                 }
 
+                await _userMistakeService.UpdateAsync(mistake.Id, new RequestUserMistakeDto
+                {
+                    IsAnalyzed = true
+                });
                 var prompt = $@"This is a TOEIC practice quiz with the following details:
 Topic: {quizSet.Title}
 TOIEC part: {quiz.TOEICPart}
@@ -1183,11 +1225,6 @@ Return in JSON:
                     WeakPoint = analysisResult.WeakPoint,
                     Advice = analysisResult.Advice,
                     IsDone = false
-                });
-
-                await _userMistakeService.UpdateAsync(mistake.Id, new RequestUserMistakeDto
-                {
-                    IsAnalyzed = true
                 });
             }
 

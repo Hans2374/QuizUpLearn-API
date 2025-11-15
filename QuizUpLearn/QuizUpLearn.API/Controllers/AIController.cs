@@ -2,6 +2,7 @@
 using BusinessLogic.DTOs.QuizSetDtos;
 using BusinessLogic.Helpers;
 using BusinessLogic.Interfaces;
+using BusinessLogic.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using QuizUpLearn.API.Hubs;
@@ -64,9 +65,9 @@ namespace QuizUpLearn.API.Controllers
             {
                 Title = inputData.Topic,
                 Description = $"AI-generated TOEIC practice quiz on {inputData.Topic} focus on TOEIC {quizPart.ToString()}",
-                QuizType = QuizSetTypeEnum.Practice,
+                QuizSetType = QuizSetTypeEnum.Practice,
                 DifficultyLevel = inputData.Difficulty,
-                CreatedBy = inputData.CreatorId
+                CreatedBy = inputData.CreatorId,
             });
             var quizSetId = createdQuizSet.Id;
 
@@ -113,7 +114,7 @@ namespace QuizUpLearn.API.Controllers
                             break;
                     }
 
-                    await hubContext.Clients.Group(jobId.ToString()).SendAsync("JobFailed", new
+                    await hubContext.Clients.Group(jobId.ToString()).SendAsync("JobCompleted", new
                     {
                         JobId = jobId,
                         Result = "",

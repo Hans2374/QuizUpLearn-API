@@ -7,7 +7,7 @@ namespace Repository.Entities
     {
         public string Title { get; set; } = string.Empty;
         public string Description { get; set; } = string.Empty;
-        public QuizSetTypeEnum QuizType { get; set; } = QuizSetTypeEnum.Practice;
+        public QuizSetTypeEnum QuizSetType { get; set; }
         public string DifficultyLevel { get; set; } = string.Empty;
         public Guid CreatedBy { get; set; }
         public bool IsAIGenerated { get; set; } = true;
