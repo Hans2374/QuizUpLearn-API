@@ -3,7 +3,7 @@ using Repository.Enums;
 
 namespace Repository.Entities
 {
-    public class Transaction : BaseEntity
+    public class PaymentTransaction : BaseEntity
     {
         public Guid UserId { get; set; }
         public Guid SubscriptionPlanId { get; set; }
