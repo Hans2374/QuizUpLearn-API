@@ -6,7 +6,7 @@ namespace Repository.Entities
     {
         public Guid UserId { get; set; }
         public Guid SubscriptionPlanId { get; set; }
-        
+        public int AiGenerateQuizSetRemaining { get; set; } = 0;
         public virtual User? User { get; set; }
         public virtual SubscriptionPlan? SubscriptionPlan { get; set; }
     }

@@ -6,6 +6,10 @@ namespace Repository.Entities
     {
         public string Name { get; set; } = string.Empty;
         public long Price { get; set; } = 0; //in vnd
-        public int DurationInDays { get; set; }
+        public int DurationDays { get; set; }
+        public bool CanAccessPremiumContent { get; set; } = false; //Join tournament
+        public bool CanAccessAiFeatures { get; set; } = false;
+        public int AiGenerateQuizSetMaxTimes = 0;
+        public bool IsActive { get; set; } = true;
     }
 }
