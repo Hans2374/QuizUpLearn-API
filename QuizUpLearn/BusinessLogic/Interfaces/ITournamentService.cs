@@ -11,6 +11,7 @@ namespace BusinessLogic.Interfaces
 		Task<TournamentTodaySetDto?> GetTodaySetAsync(Guid tournamentId);
 		Task<IEnumerable<TournamentQuizSetItemDto>> GetQuizSetsAsync(Guid tournamentId);
 		Task<bool> DeleteAsync(Guid tournamentId);
+		Task<IEnumerable<TournamentResponseDto>> GetAllAsync(bool includeDeleted = false);
 	}
 }
 

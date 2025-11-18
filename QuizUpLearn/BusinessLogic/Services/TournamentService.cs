@@ -248,6 +248,20 @@ namespace BusinessLogic.Services
 			await _tournamentQuizSetRepo.AddRangeAsync(items);
 		}
 
+		public async Task<IEnumerable<TournamentResponseDto>> GetAllAsync(bool includeDeleted = false)
+		{
+			var tournaments = await _tournamentRepo.GetAllAsync(includeDeleted);
+			var result = new List<TournamentResponseDto>();
+			
+			foreach (var t in tournaments)
+			{
+				var quizSets = await _tournamentQuizSetRepo.GetByTournamentAsync(t.Id);
+				result.Add(MapResponse(t, quizSets.Count()));
+			}
+			
+			return result;
+		}
+
 		private static TournamentResponseDto MapResponse(Tournament t, int totalQuizSets)
 		{
 			return new TournamentResponseDto
