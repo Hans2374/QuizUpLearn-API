@@ -208,10 +208,17 @@ namespace BusinessLogic.Services
 				throw new ArgumentException("Không còn ngày nào trong tháng để thêm quiz set");
 			}
 
-			// Kiểm tra số quiz sets muốn add không được vượt quá số ngày còn lại
-			if (validIds.Count > days)
+			// Kiểm tra số quiz sets phải bằng đúng số ngày còn lại
+			if (validIds.Count != days)
 			{
-				throw new ArgumentException($"Chỉ có thể thêm được tối đa {days} quiz set(s) (số ngày còn lại trong tháng từ ngày tạo tournament đến cuối tháng). Bạn đang cố thêm {validIds.Count} quiz set(s).");
+				if (validIds.Count > days)
+				{
+					throw new ArgumentException($"Chỉ có thể thêm được tối đa {days} quiz set(s) (số ngày còn lại trong tháng từ ngày tạo tournament đến cuối tháng). Bạn đang cố thêm {validIds.Count} quiz set(s).");
+				}
+				else
+				{
+					throw new ArgumentException($"Cần truyền đúng {days} quiz set(s) tương ứng số ngày còn lại trong tháng (từ ngày tạo tournament đến cuối tháng). Bạn hiện chỉ truyền {validIds.Count} quiz set(s).");
+				}
 			}
 
 			// Xóa các quiz sets cũ nếu có (để add lại từ đầu)
@@ -221,24 +228,13 @@ namespace BusinessLogic.Services
 			var rnd = new Random();
 			var shuffled = validIds.OrderBy(_ => rnd.Next()).ToList();
 
-			// Nếu thiếu so với số ngày, lặp lại để đủ; nếu đủ thì dùng hết
-			var expanded = new List<Guid>();
-			while (expanded.Count < days)
-			{
-				foreach (var q in shuffled)
-				{
-					if (expanded.Count >= days) break;
-					expanded.Add(q);
-				}
-			}
-
 			var items = new List<TournamentQuizSet>();
 			for (int i = 0; i < days; i++)
 			{
 				items.Add(new TournamentQuizSet
 				{
 					TournamentId = tournament.Id,
-					QuizSetId = expanded[i],
+					QuizSetId = shuffled[i],
 					UnlockDate = startDate.AddDays(i + 1),
 					IsActive = false,
 					DateNumber = i + 1,
