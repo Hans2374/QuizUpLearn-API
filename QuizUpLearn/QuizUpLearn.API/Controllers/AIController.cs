@@ -142,15 +142,6 @@ namespace QuizUpLearn.API.Controllers
                             QuizSetId = quizSetId
                         });
                     }
-                    /*await subscriptionService.CalculateRemainingUsageByUserId(inputData.CreatorId, inputData.QuestionQuantity);
-
-                    await hubContext.Clients.Group(jobId.ToString()).SendAsync("JobCompleted", new
-                    {
-                        JobId = jobId,
-                        Result = result,
-                        Status = "Completed",
-                        QuizSetId = quizSetId
-                    });*/
                 }
                 catch (Exception ex)
                 {

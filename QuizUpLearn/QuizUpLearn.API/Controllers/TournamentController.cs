@@ -38,7 +38,7 @@ namespace QuizUpLearn.API.Controllers
 			}
 			catch (Exception ex)
 			{
-				_logger.LogError(ex, "Get tournaments failed");
+				_logger.LogError(ex, "Get all tournaments failed");
 				return BadRequest(new ApiResponse<IEnumerable<TournamentResponseDto>> { Success = false, Message = ex.Message });
 			}
 		}
@@ -75,6 +75,21 @@ namespace QuizUpLearn.API.Controllers
 			{
 				_logger.LogError(ex, "Add quiz sets failed");
 				return BadRequest(new ApiResponse<TournamentResponseDto> { Success = false, Message = ex.Message });
+			}
+		}
+
+		[HttpGet("{id:guid}/quizsets")]
+		public async Task<ActionResult<ApiResponse<IEnumerable<TournamentQuizSetItemDto>>>> GetQuizSets([FromRoute] Guid id)
+		{
+			try
+			{
+				var res = await _tournamentService.GetQuizSetsAsync(id);
+				return Ok(new ApiResponse<IEnumerable<TournamentQuizSetItemDto>> { Success = true, Data = res, Message = "OK" });
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Get quiz sets failed");
+				return BadRequest(new ApiResponse<IEnumerable<TournamentQuizSetItemDto>> { Success = false, Message = ex.Message });
 			}
 		}
 

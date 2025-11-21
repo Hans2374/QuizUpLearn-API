@@ -3,6 +3,7 @@ using BusinessLogic.DTOs.PaymentTransactionDtos;
 using BusinessLogic.DTOs.SubscriptionDtos;
 using BusinessLogic.Interfaces;
 using Net.payOS.Types;
+using Repository.Entities;
 
 namespace BusinessLogic.Services
 {
@@ -45,7 +46,7 @@ namespace BusinessLogic.Services
         {
             var transaction = await _paymentTransactionService.GetByPaymentGatewayTransactionOrderCodeAsync(orderCode.ToString());
 
-            if (transaction == null)
+            if (transaction == null || transaction.Status == Repository.Enums.TransactionStatusEnum.Completed)
             {
                 return;
             }
@@ -67,14 +68,7 @@ namespace BusinessLogic.Services
             
             var subscription = await _subscriptionService.GetByUserIdAsync(transaction.UserId);
 
-            // Calculate end date based on previous end date
             DateTime? startDate = DateTime.UtcNow;
-            if(subscription != null 
-                && subscription.EndDate != null
-                && subscription.EndDate > DateTime.UtcNow)
-            {
-                startDate = subscription.EndDate;
-            }
 
             // If subscription does not exist, create a new one
             if (subscription == null)
@@ -89,10 +83,15 @@ namespace BusinessLogic.Services
             }
             else
             {
+                if (subscription.EndDate != null && subscription.EndDate > DateTime.UtcNow)
+                {
+                    startDate = subscription.EndDate;
+                }
+
                 await _subscriptionService.UpdateAsync(subscription.Id, new RequestSubscriptionDto
                 {
                     SubscriptionPlanId = transaction.SubscriptionPlanId,
-                    AiGenerateQuizSetRemaining = plan.AiGenerateQuizSetMaxTimes,
+                    AiGenerateQuizSetRemaining = subscription.AiGenerateQuizSetRemaining + plan.AiGenerateQuizSetMaxTimes,
                     EndDate = startDate.Value.AddDays(plan.DurationDays)
                 });
             }
