@@ -355,13 +355,14 @@ namespace BusinessLogic.Services
             int lisPoint = ConvertToTOEICScore(correctLisCount, isListening: true);
             int reaPoint = ConvertToTOEICScore(correctReaCount, isListening: false);
 
-            // Cập nhật QuizAttempt
+            // Cập nhật QuizAttempt để lưu vào history
             attempt.AttemptType = "placement";
             attempt.CorrectAnswers = correctLisCount + correctReaCount;
             attempt.WrongAnswers = attempt.TotalQuestions - attempt.CorrectAnswers;
             attempt.Score = lisPoint + reaPoint;
             attempt.Accuracy = attempt.TotalQuestions > 0 ? (decimal)attempt.CorrectAnswers / attempt.TotalQuestions : 0;
             attempt.Status = "completed";
+            attempt.IsCompleted = true;
             attempt.TimeSpent = totalTimeSpent > 0 ? totalTimeSpent : (int?)null;
 
             await _attemptRepo.UpdateAsync(dto.AttemptId, attempt);

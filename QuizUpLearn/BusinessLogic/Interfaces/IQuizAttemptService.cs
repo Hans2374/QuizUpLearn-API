@@ -13,6 +13,7 @@ namespace BusinessLogic.Interfaces
         Task<ResponseQuizAttemptDto?> UpdateAsync(Guid id, RequestQuizAttemptDto dto);
         Task<ResponseQuizAttemptDto?> FinishAsync(Guid id);
         Task<PlayerHistoryResponseDto> GetPlayerHistoryAsync(PlayerHistoryRequestDto request);
+        Task<PlacementTestHistoryResponseDto> GetPlacementTestHistoryAsync(PlayerHistoryRequestDto request);
         Task<PlayerStatsDto> GetPlayerStatsAsync(Guid userId);
         Task<bool> SoftDeleteAsync(Guid id);
         Task<bool> RestoreAsync(Guid id);
