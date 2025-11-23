@@ -39,6 +39,13 @@ namespace QuizUpLearn.API.Controllers
             return Ok(quizAttemptDetails);
         }
 
+        [HttpGet("attempt/{attemptId}/placement-test")]
+        public async Task<IActionResult> GetPlacementTestByAttemptId([FromRoute] Guid attemptId)
+        {
+            var result = await _service.GetPlacementTestByAttemptIdAsync(attemptId);
+            return Ok(result);
+        }
+
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] RequestQuizAttemptDetailDto dto)
         {

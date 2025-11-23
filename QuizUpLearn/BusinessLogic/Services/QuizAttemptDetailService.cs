@@ -67,6 +67,61 @@ namespace BusinessLogic.Services
             return _mapper.Map<IEnumerable<ResponseQuizAttemptDetailDto>>(list);
         }
 
+        public async Task<ResponsePlacementTestDto> GetPlacementTestByAttemptIdAsync(Guid attemptId)
+        {
+            var attempt = await _attemptRepo.GetByIdAsync(attemptId);
+            if (attempt == null)
+            {
+                throw new InvalidOperationException("Attempt not found");
+            }
+
+            if (attempt.AttemptType != "placement")
+            {
+                throw new InvalidOperationException("This attempt is not a placement test");
+            }
+
+            // Lấy QuizAttemptDetails để tính LisPoint và ReaPoint
+            var details = await _repo.GetByAttemptIdAsync(attemptId, includeDeleted: false);
+            var detailList = details.ToList();
+
+            int correctLisCount = 0;
+            int correctReaCount = 0;
+
+            foreach (var detail in detailList)
+            {
+                if (detail.IsCorrect == true)
+                {
+                    // Lấy Quiz để biết TOEICPart
+                    var quiz = await _quizRepo.GetQuizByIdAsync(detail.QuestionId);
+                    if (quiz != null)
+                    {
+                        var isListening = quiz.TOEICPart == "PART1" || quiz.TOEICPart == "PART2" ||
+                                        quiz.TOEICPart == "PART3" || quiz.TOEICPart == "PART4";
+                        
+                        if (isListening)
+                            correctLisCount++;
+                        else
+                            correctReaCount++;
+                    }
+                }
+            }
+
+            // Tính LisPoint và ReaPoint
+            int lisPoint = ConvertToTOEICScore(correctLisCount, isListening: true);
+            int reaPoint = ConvertToTOEICScore(correctReaCount, isListening: false);
+
+            return new ResponsePlacementTestDto
+            {
+                AttemptId = attemptId,
+                LisPoint = lisPoint,
+                TotalCorrectLisAns = correctLisCount,
+                ReaPoint = reaPoint,
+                TotalCorrectReaAns = correctReaCount,
+                TotalQuestions = attempt.TotalQuestions,
+                Status = attempt.Status
+            };
+        }
+
         public async Task<bool> RestoreAsync(Guid id)
         {
             return await _repo.RestoreAsync(id);

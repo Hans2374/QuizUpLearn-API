@@ -8,6 +8,7 @@ namespace BusinessLogic.Interfaces
         Task<ResponseQuizAttemptDetailDto?> GetByIdAsync(Guid id);
         Task<IEnumerable<ResponseQuizAttemptDetailDto>> GetAllAsync(bool includeDeleted = false);
         Task<IEnumerable<ResponseQuizAttemptDetailDto>> GetByAttemptIdAsync(Guid attemptId, bool includeDeleted = false);
+        Task<ResponsePlacementTestDto> GetPlacementTestByAttemptIdAsync(Guid attemptId);
         Task<ResponseQuizAttemptDetailDto?> UpdateAsync(Guid id, RequestQuizAttemptDetailDto dto);
         Task<bool> SoftDeleteAsync(Guid id);
         Task<bool> RestoreAsync(Guid id);
