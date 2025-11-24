@@ -4,11 +4,13 @@ using Microsoft.AspNetCore.Mvc;
 using BusinessLogic.DTOs;
 using QuizUpLearn.API.Models;
 using System.Net;
+using Microsoft.AspNetCore.Authorization;
 
 namespace QuizUpLearn.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class QuizSetController : ControllerBase
     {
         private readonly IQuizSetService _quizSetService;

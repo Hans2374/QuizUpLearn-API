@@ -1,10 +1,10 @@
 ﻿using AutoMapper;
+using BusinessLogic.DTOs;
 using BusinessLogic.DTOs.QuizSetDtos;
+using BusinessLogic.Helpers;
 using BusinessLogic.Interfaces;
 using Repository.Entities;
 using Repository.Interfaces;
-using BusinessLogic.Extensions;
-using BusinessLogic.DTOs;
 
 namespace BusinessLogic.Services
 {
@@ -38,24 +38,55 @@ namespace BusinessLogic.Services
 
         public async Task<PaginationResponseDto<QuizSetResponseDto>> GetAllQuizSetsAsync(bool includeDeleted, PaginationRequestDto pagination)
         {
-            var quizSets = await _quizSetRepo.GetAllQuizSetsAsync(includeDeleted);
+            var filters = ExtractFilterValues(pagination);
+
+            var quizSets = await _quizSetRepo.GetAllQuizSetsAsync(
+                includeDeleted, 
+                pagination.SearchTerm, 
+                pagination.SortBy, 
+                pagination.SortDirection,
+                filters.showDeleted,
+                filters.showPremiumOnly,
+                filters.showNonPremium,
+                filters.showPublished,
+                filters.showUnpublished,
+                filters.showAIGenerated,
+                filters.showManuallyCreated);
 
             var dtos = _mapper.Map<IEnumerable<QuizSetResponseDto>>(quizSets);
-            return dtos.ToPagedResponse(pagination);
+            return PaginationHelper.CreatePagedResponse(dtos, pagination);
         }
 
         public async Task<PaginationResponseDto<QuizSetResponseDto>> GetQuizSetsByCreatorAsync(Guid creatorId, PaginationRequestDto pagination)
         {
-            var quizSets = await _quizSetRepo.GetQuizSetsByCreatorAsync(creatorId);
+            var filters = ExtractFilterValues(pagination);
+
+            var quizSets = await _quizSetRepo.GetQuizSetsByCreatorAsync(
+                creatorId, 
+                pagination.SearchTerm, 
+                pagination.SortBy, 
+                pagination.SortDirection,
+                filters.showDeleted,
+                filters.showPremiumOnly,
+                filters.showNonPremium,
+                filters.showPublished,
+                filters.showUnpublished,
+                filters.showAIGenerated,
+                filters.showManuallyCreated);
+
             var dtos = _mapper.Map<IEnumerable<QuizSetResponseDto>>(quizSets);
-            return dtos.ToPagedResponse(pagination);
+            return PaginationHelper.CreatePagedResponse(dtos, pagination);
         }
 
         public async Task<PaginationResponseDto<QuizSetResponseDto>> GetPublishedQuizSetsAsync(PaginationRequestDto pagination)
         {
-            var quizSets = await _quizSetRepo.GetPublishedQuizSetsAsync();
+            var quizSets = await _quizSetRepo.GetPublishedQuizSetsAsync(
+                pagination.SearchTerm, 
+                pagination.SortBy, 
+                pagination.SortDirection);
+
             var dtos = _mapper.Map<IEnumerable<QuizSetResponseDto>>(quizSets);
-            return dtos.ToPagedResponse(pagination);
+            return PaginationHelper.CreatePagedResponse(dtos, pagination);
         }
 
         public async Task<QuizSetResponseDto> UpdateQuizSetAsync(Guid id, QuizSetRequestDto quizSetDto)
@@ -78,6 +109,36 @@ namespace BusinessLogic.Services
         {
             var quizSet = await _quizSetRepo.RestoreQuizSetAsync(id);
             return _mapper.Map<QuizSetResponseDto>(quizSet);
+        }
+
+        private (bool? showDeleted, bool? showPremiumOnly, bool? showNonPremium, bool? showPublished, 
+                bool? showUnpublished, bool? showAIGenerated, bool? showManuallyCreated) ExtractFilterValues(PaginationRequestDto pagination)
+        {
+            if (pagination.Filters == null)
+                return (null, null, null, null, null, null, null);
+
+            bool? showDeleted = pagination.Filters.ContainsKey("showDeleted") && 
+                               pagination.Filters["showDeleted"] is bool sd ? sd : null;
+
+            bool? showPremiumOnly = pagination.Filters.ContainsKey("showPremiumOnly") && 
+                                   pagination.Filters["showPremiumOnly"] is bool spo ? spo : null;
+
+            bool? showNonPremium = pagination.Filters.ContainsKey("showNonPremium") && 
+                                  pagination.Filters["showNonPremium"] is bool snp ? snp : null;
+
+            bool? showPublished = pagination.Filters.ContainsKey("showPublished") && 
+                                 pagination.Filters["showPublished"] is bool sp ? sp : null;
+
+            bool? showUnpublished = pagination.Filters.ContainsKey("showUnpublished") && 
+                                   pagination.Filters["showUnpublished"] is bool su ? su : null;
+
+            bool? showAIGenerated = pagination.Filters.ContainsKey("showAIGenerated") && 
+                                   pagination.Filters["showAIGenerated"] is bool sai ? sai : null;
+
+            bool? showManuallyCreated = pagination.Filters.ContainsKey("showManuallyCreated") && 
+                                       pagination.Filters["showManuallyCreated"] is bool smc ? smc : null;
+
+            return (showDeleted, showPremiumOnly, showNonPremium, showPublished, showUnpublished, showAIGenerated, showManuallyCreated);
         }
     }
 }
