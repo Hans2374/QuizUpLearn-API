@@ -4,11 +4,13 @@ using Microsoft.AspNetCore.Mvc;
 using BusinessLogic.DTOs;
 using QuizUpLearn.API.Models;
 using System.Net;
+using Microsoft.AspNetCore.Authorization;
 
 namespace QuizUpLearn.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class QuizSetController : ControllerBase
     {
         private readonly IQuizSetService _quizSetService;
@@ -49,42 +51,30 @@ namespace QuizUpLearn.API.Controllers
         }
 
         /// <summary>
-        /// Gets all quiz sets
+        /// Gets all quiz sets with filters
         /// </summary>
+        /// <param name="request">Pagination and filter parameters</param>
         /// <returns>List of quiz sets</returns>
-        [HttpGet]
+        [HttpPost("search")]
         public async Task<ActionResult<PaginationResponseDto<QuizSetResponseDto>>> GetAllQuizSets(
-            [FromQuery] PaginationRequestDto pagination,
-            [FromQuery] bool includeDeleted = false)
+            [FromBody] PaginationRequestDto request)
         {
-            var quizSets = await _quizSetService.GetAllQuizSetsAsync(includeDeleted, pagination);
-
+            var quizSets = await _quizSetService.GetAllQuizSetsAsync(request);
             return Ok(quizSets);
         }
 
         /// <summary>
-        /// Gets quiz sets created by a specific user
+        /// Gets quiz sets created by a specific user with filters
         /// </summary>
         /// <param name="creatorId">Creator ID</param>
+        /// <param name="request">Pagination and filter parameters</param>
         /// <returns>List of quiz sets by creator</returns>
-        [HttpGet("creator/{creatorId}")]
+        [HttpPost("creator/{creatorId}/search")]
         public async Task<ActionResult<PaginationResponseDto<QuizSetResponseDto>>> GetQuizSetsByCreator(
             Guid creatorId,
-            [FromQuery] PaginationRequestDto pagination)
+            [FromBody] PaginationRequestDto request)
         {
-            var quizSets = await _quizSetService.GetQuizSetsByCreatorAsync(creatorId, pagination);
-            return Ok(quizSets);
-        }
-
-        /// <summary>
-        /// Gets all published quiz sets
-        /// </summary>
-        /// <returns>List of published quiz sets</returns>
-        [HttpGet("published")]
-        public async Task<ActionResult<PaginationResponseDto<QuizSetResponseDto>>> GetPublishedQuizSets(
-            [FromQuery] PaginationRequestDto pagination)
-        {
-            var quizSets = await _quizSetService.GetPublishedQuizSetsAsync(pagination);
+            var quizSets = await _quizSetService.GetQuizSetsByCreatorAsync(creatorId, request);
             return Ok(quizSets);
         }
 

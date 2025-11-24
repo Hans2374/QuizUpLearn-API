@@ -1,7 +1,9 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using BusinessLogic.Interfaces;
+﻿using BusinessLogic.DTOs;
 using BusinessLogic.DTOs.SubscriptionPlanDtos;
-using BusinessLogic.DTOs;
+using BusinessLogic.Interfaces;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using QuizUpLearn.API.Attributes;
 
 namespace QuizUpLearn.API.Controllers
 {
@@ -31,6 +33,8 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpPost]
+        [Authorize]
+        [SubscriptionAndRoleAuthorize("Administrator")]
         public async Task<ActionResult<ResponseSubscriptionPlanDto>> Create([FromBody] RequestSubscriptionPlanDto dto)
         {
             var created = await _service.CreateAsync(dto);
@@ -38,6 +42,8 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpPut("{id:guid}")]
+        [Authorize]
+        [SubscriptionAndRoleAuthorize("Administrator")]
         public async Task<ActionResult<ResponseSubscriptionPlanDto>> Update(Guid id, [FromBody] RequestSubscriptionPlanDto dto)
         {
             var updated = await _service.UpdateAsync(id, dto);
@@ -46,6 +52,8 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpDelete("{id:guid}")]
+        [Authorize]
+        [SubscriptionAndRoleAuthorize("Administrator")]
         public async Task<ActionResult> Delete(Guid id)
         {
             var deleted = await _service.DeleteAsync(id);
