@@ -2,6 +2,7 @@
 using Repository.DBContext;
 using Repository.Entities;
 using Repository.Interfaces;
+using Repository.Enums;
 
 namespace Repository.Repositories
 {
@@ -32,24 +33,20 @@ namespace Repository.Repositories
         }
 
         public async Task<IEnumerable<QuizSet>> GetAllQuizSetsAsync(
-            bool includeDeleted, 
             string? searchTerm = null, 
             string? sortBy = null, 
             string? sortDirection = null,
-            bool? showDeleted = null,
-            bool? showPremiumOnly = null,
-            bool? showNonPremium = null,
-            bool? showPublished = null,
-            bool? showUnpublished = null,
-            bool? showAIGenerated = null,
-            bool? showManuallyCreated = null)
+            bool? isDeleted = null,
+            bool? isPremiumOnly = null,
+            bool? isPublished = null,
+            bool? isAiGenerated = null,
+            QuizSetTypeEnum? quizSetType = null)
         {
             var query = _context.QuizSets
                 .Include(qs => qs.Creator)
-                .Where(qs => includeDeleted || qs.DeletedAt == null);
+                .AsQueryable();
 
-            query = ApplyFilters(query, showDeleted, showPremiumOnly, showNonPremium, 
-                               showPublished, showUnpublished, showAIGenerated, showManuallyCreated);
+            query = ApplyFilters(query, isDeleted, isPremiumOnly, isPublished, isAiGenerated, quizSetType);
             query = ApplySearch(query, searchTerm);
             query = ApplySorting(query, sortBy, sortDirection);
 
@@ -61,35 +58,17 @@ namespace Repository.Repositories
             string? searchTerm = null, 
             string? sortBy = null, 
             string? sortDirection = null,
-            bool? showDeleted = null,
-            bool? showPremiumOnly = null,
-            bool? showNonPremium = null,
-            bool? showPublished = null,
-            bool? showUnpublished = null,
-            bool? showAIGenerated = null,
-            bool? showManuallyCreated = null)
+            bool? isDeleted = null,
+            bool? isPremiumOnly = null,
+            bool? isPublished = null,
+            bool? isAiGenerated = null,
+            QuizSetTypeEnum? quizSetType = null)
         {
             var query = _context.QuizSets
                 .Include(qs => qs.Creator)
-                .Where(qs => qs.CreatedBy == creatorId && qs.DeletedAt == null);
+                .Where(qs => qs.CreatedBy == creatorId);
 
-            query = ApplyFilters(query, showDeleted, showPremiumOnly, showNonPremium, 
-                               showPublished, showUnpublished, showAIGenerated, showManuallyCreated);
-            query = ApplySearch(query, searchTerm);
-            query = ApplySorting(query, sortBy, sortDirection);
-
-            return await query.ToListAsync();
-        }
-
-        public async Task<IEnumerable<QuizSet>> GetPublishedQuizSetsAsync(
-            string? searchTerm = null, 
-            string? sortBy = null, 
-            string? sortDirection = null)
-        {
-            var query = _context.QuizSets
-                .Include(qs => qs.Creator)
-                .Where(qs => qs.IsPublished && qs.DeletedAt == null);
-
+            query = ApplyFilters(query, isDeleted, isPremiumOnly, isPublished, isAiGenerated, quizSetType);
             query = ApplySearch(query, searchTerm);
             query = ApplySorting(query, sortBy, sortDirection);
 
@@ -163,47 +142,46 @@ namespace Repository.Repositories
 
         private IQueryable<QuizSet> ApplyFilters(
             IQueryable<QuizSet> query,
-            bool? showDeleted = null,
-            bool? showPremiumOnly = null,
-            bool? showNonPremium = null,
-            bool? showPublished = null,
-            bool? showUnpublished = null,
-            bool? showAIGenerated = null,
-            bool? showManuallyCreated = null)
+            bool? isDeleted = null,
+            bool? isPremiumOnly = null,
+            bool? isPublished = null,
+            bool? isAiGenerated = null,
+            QuizSetTypeEnum? quizSetType = null)
         {
-            if (showDeleted == true)
+            if (isDeleted.HasValue)
             {
-                query = query.Where(qs => qs.DeletedAt != null);
+                if (isDeleted.Value)
+                {
+                    query = query.Where(qs => qs.DeletedAt != null);
+                }
+                else
+                {
+                    query = query.Where(qs => qs.DeletedAt == null);
+                }
+            }
+            else
+            {
+                query = query.Where(qs => qs.DeletedAt == null);
             }
 
-            if (showPremiumOnly == true)
+            if (isPremiumOnly.HasValue)
             {
-                query = query.Where(qs => qs.IsPremiumOnly == true);
+                query = query.Where(qs => qs.IsPremiumOnly == isPremiumOnly.Value);
             }
 
-            if (showNonPremium == true)
+            if (isPublished.HasValue)
             {
-                query = query.Where(qs => qs.IsPremiumOnly == false);
+                query = query.Where(qs => qs.IsPublished == isPublished.Value);
             }
 
-            if (showPublished == true)
+            if (isAiGenerated.HasValue)
             {
-                query = query.Where(qs => qs.IsPublished == true);
+                query = query.Where(qs => qs.IsAIGenerated == isAiGenerated.Value);
             }
 
-            if (showUnpublished == true)
+            if (quizSetType.HasValue)
             {
-                query = query.Where(qs => qs.IsPublished == false);
-            }
-
-            if (showAIGenerated == true)
-            {
-                query = query.Where(qs => qs.IsAIGenerated == true);
-            }
-
-            if (showManuallyCreated == true)
-            {
-                query = query.Where(qs => qs.IsAIGenerated == false);
+                query = query.Where(qs => qs.QuizSetType == quizSetType.Value);
             }
 
             return query;
@@ -254,6 +232,9 @@ namespace Repository.Repositories
                 "averagescore" => isDescending 
                     ? query.OrderByDescending(qs => qs.AverageScore) 
                     : query.OrderBy(qs => qs.AverageScore),
+                "quizsettype" => isDescending 
+                    ? query.OrderByDescending(qs => qs.QuizSetType) 
+                    : query.OrderBy(qs => qs.QuizSetType),
                 _ => query.OrderByDescending(qs => qs.CreatedAt)
             };
         }

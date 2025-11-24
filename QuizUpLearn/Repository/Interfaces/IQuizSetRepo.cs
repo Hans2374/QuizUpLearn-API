@@ -1,4 +1,5 @@
 ﻿using Repository.Entities;
+using Repository.Enums;
 
 namespace Repository.Interfaces
 {
@@ -7,33 +8,24 @@ namespace Repository.Interfaces
         Task<QuizSet> CreateQuizSetAsync(QuizSet quizSet);
         Task<QuizSet?> GetQuizSetByIdAsync(Guid id);
         Task<IEnumerable<QuizSet>> GetAllQuizSetsAsync(
-            bool includeDeleted, 
             string? searchTerm = null, 
             string? sortBy = null, 
             string? sortDirection = null,
-            bool? showDeleted = null,
-            bool? showPremiumOnly = null,
-            bool? showNonPremium = null,
-            bool? showPublished = null,
-            bool? showUnpublished = null,
-            bool? showAIGenerated = null,
-            bool? showManuallyCreated = null);
+            bool? isDeleted = null,
+            bool? isPremiumOnly = null,
+            bool? isPublished = null,
+            bool? isAiGenerated = null,
+            QuizSetTypeEnum? quizSetType = null);
         Task<IEnumerable<QuizSet>> GetQuizSetsByCreatorAsync(
             Guid creatorId, 
             string? searchTerm = null, 
             string? sortBy = null, 
             string? sortDirection = null,
-            bool? showDeleted = null,
-            bool? showPremiumOnly = null,
-            bool? showNonPremium = null,
-            bool? showPublished = null,
-            bool? showUnpublished = null,
-            bool? showAIGenerated = null,
-            bool? showManuallyCreated = null);
-        Task<IEnumerable<QuizSet>> GetPublishedQuizSetsAsync(
-            string? searchTerm = null, 
-            string? sortBy = null, 
-            string? sortDirection = null);
+            bool? isDeleted = null,
+            bool? isPremiumOnly = null,
+            bool? isPublished = null,
+            bool? isAiGenerated = null,
+            QuizSetTypeEnum? quizSetType = null);
         Task<QuizSet?> UpdateQuizSetAsync(Guid id, QuizSet quizSet);
         Task<bool> SoftDeleteQuizSetAsync(Guid id);
         Task<bool> HardDeleteQuizSetAsync(Guid id);
