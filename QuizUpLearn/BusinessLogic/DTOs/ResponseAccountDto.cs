@@ -7,6 +7,7 @@ namespace BusinessLogic.DTOs
         public string Username { get; set; } = string.Empty;
         public Guid UserId { get; set; }
         public Guid RoleId { get; set; }
+        public string RoleName { get; set; } = string.Empty;
         public bool IsEmailVerified { get; set; }
         public DateTime? LastLoginAt { get; set; }
         public int LoginAttempts { get; set; }

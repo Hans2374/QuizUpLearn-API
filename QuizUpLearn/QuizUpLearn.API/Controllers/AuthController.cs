@@ -78,7 +78,8 @@ namespace QuizUpLearn.API.Controllers
                 new Claim(JwtRegisteredClaimNames.Sub, account.Id.ToString()),
                 new Claim(JwtRegisteredClaimNames.Email, account.Email ?? string.Empty),
                 new Claim("userId", account.UserId.ToString()),
-                new Claim("roleId", account.RoleId.ToString())
+                new Claim("roleId", account.RoleId.ToString()),
+                new Claim("roleName", account.RoleName ?? string.Empty)
             };
 
             var token = new JwtSecurityToken(
@@ -106,6 +107,7 @@ namespace QuizUpLearn.API.Controllers
             var email = principal.FindFirstValue(JwtRegisteredClaimNames.Email) ?? string.Empty;
             var userIdStr = principal.FindFirst("userId")?.Value ?? Guid.Empty.ToString();
             var roleIdStr = principal.FindFirst("roleId")?.Value ?? Guid.Empty.ToString();
+            var roleName = principal.FindFirst("roleName")?.Value ?? string.Empty;
 
             var account = new ResponseAccountDto
             {
@@ -114,6 +116,7 @@ namespace QuizUpLearn.API.Controllers
                 Username = string.Empty,
                 UserId = Guid.TryParse(userIdStr, out var userId) ? userId : Guid.Empty,
                 RoleId = Guid.Parse(roleIdStr),
+                RoleName = roleName,
                 IsEmailVerified = false,
                 LastLoginAt = null,
                 LoginAttempts = 0,
@@ -151,6 +154,7 @@ namespace QuizUpLearn.API.Controllers
                 new Claim(JwtRegisteredClaimNames.Email, account.Email ?? string.Empty),
                 new Claim("userId", account.UserId.ToString()),
                 new Claim("roleId", account.RoleId.ToString()),
+                new Claim("roleName", account.RoleName ?? string.Empty),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 

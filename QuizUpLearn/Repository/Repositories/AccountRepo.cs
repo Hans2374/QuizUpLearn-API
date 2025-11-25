@@ -84,6 +84,7 @@ namespace Repository.Repositories
             var normalized = email.Trim().ToLowerInvariant();
             return await _context.Accounts
                 .Include(a => a.User)
+                .Include(a => a.Role)
                 .FirstOrDefaultAsync(a => a.Email == normalized);
         }
 
