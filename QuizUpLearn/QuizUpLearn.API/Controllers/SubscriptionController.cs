@@ -36,8 +36,11 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpGet("user/{userId:guid}")]
-        public async Task<ActionResult<ResponseSubscriptionDto>> GetByUserId(Guid userId)
+        [SubscriptionAndRoleAuthorize]
+        public async Task<ActionResult<ResponseSubscriptionDto>> GetByUserId()
         {
+            var userId = (Guid)HttpContext.Items["UserId"]!;
+
             var result = await _service.GetByUserIdAsync(userId);
             if (result == null) return NotFound();
             return Ok(result);

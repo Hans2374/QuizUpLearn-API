@@ -51,5 +51,10 @@ namespace BusinessLogic.Services
         {
             return await _repo.DeleteAsync(id);
         }
+
+        public async Task<bool> IsWeakPointExistedAsync(string weakPoint)
+        {
+            return await _repo.IsWeakPointExisted(weakPoint);
+        }
     }
 }

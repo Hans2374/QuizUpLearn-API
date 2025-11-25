@@ -26,8 +26,11 @@ namespace QuizUpLearn.API.Controllers
             return Ok(userMistakes);
         }
         [HttpGet("user/{userId:guid}")]
-        public async Task<IActionResult> GetAllByUserId(Guid userId, [FromQuery] PaginationRequestDto pagination)
+        [SubscriptionAndRoleAuthorize]
+        public async Task<IActionResult> GetAllByUserId([FromQuery] PaginationRequestDto pagination)
         {
+            var userId = (Guid)HttpContext.Items["UserId"]!;
+
             var userMistakes = await _userMistakeService.GetAllByUserIdAsync(userId, pagination);
             return Ok(userMistakes);
         }

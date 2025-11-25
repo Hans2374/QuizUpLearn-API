@@ -68,5 +68,13 @@ namespace Repository.Repositories
 
             return true;
         }
+
+        public async Task<bool> IsWeakPointExisted(string weakPoint)
+        {
+            if(string.IsNullOrEmpty(weakPoint))
+                return false;
+
+            return await _context.UserWeakPoints.AnyAsync(wp => wp.WeakPoint == weakPoint);
+        }
     }
 }

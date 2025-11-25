@@ -1147,7 +1147,11 @@ Return JSON:
 
         public async Task<PaginationResponseDto<ResponseUserWeakPointDto>> AnalyzeUserMistakesAndAdviseAsync(Guid userId)
         {
-            var userMistakes = await _userMistakeService.GetAllByUserIdAsync(userId, null!);
+            var userMistakes = await _userMistakeService.GetAllByUserIdAsync(userId, new PaginationRequestDto
+            {
+                Page = 1,
+                PageSize = 100
+            });
             var existingWeakPoints = string.Empty;
             var existingAdvices = string.Empty;
 
@@ -1170,30 +1174,27 @@ Return JSON:
                 foreach (var wp in userWeakPoints.Data)
                 {
                     if (userWeakPoints == null || userWeakPoints.Data.Count() == 0) continue;
-                    existingWeakPoints += wp.WeakPoint + ", ";
+                    existingWeakPoints += wp.WeakPoint + "\n";
 
                     if (!string.IsNullOrEmpty(wp.Advice))
-                        existingAdvices += wp.Advice + ", ";
+                        existingAdvices += wp.Advice + "\n";
                 }
 
                 await _userMistakeService.UpdateAsync(mistake.Id, new RequestUserMistakeDto
                 {
                     IsAnalyzed = true
                 });
-                var prompt = $@"This is a TOEIC practice quiz with the following details:
+
+                var prompt = $@"You are an expert TOEIC tutor.
+This is a TOEIC practice quiz with the following details:
 Topic: {quizSet.Title}
 TOIEC part: {quiz.TOEICPart}
+Point range: {quizSet.DifficultyLevel}
 Question: {quiz.QuestionText}
-Answer options : {answersText}
-User's wrong answer: {mistake.UserAnswer}
+Correct answer options : {answersText}
+User's wrong answer (maybe user not answer): {mistake.UserAnswer}
 
-Provide ONE single weakpoint(weak area of skill) out of this question and ONE single advice for the user how to improve in this area.
-
-Avoid duplicated weakpoint(s) if any: {existingWeakPoints}
-
-Avoid duplicated advice(s) if any: {existingAdvices}
-
-If it is duplicated weakpoints just return empty strings for both fields.
+Generate ONE single weakpoint(weak area of skill) out of this question and ONE single advice for the user how to improve in this area.
 
 Return in JSON:
 {{
@@ -1219,7 +1220,13 @@ Return in JSON:
                     || string.IsNullOrEmpty(analysisResult.WeakPoint)
                     || string.IsNullOrEmpty(analysisResult.Advice))
                 {
-                    Console.WriteLine("No new weakpoint or advice generated.");
+                    Console.WriteLine($"Weak point can't be null");
+                    continue;
+                }
+
+                if (await _userWeakPointService.IsWeakPointExistedAsync(analysisResult.WeakPoint))
+                {
+                    Console.WriteLine($"Weak point is existed");
                     continue;
                 }
 
@@ -1227,8 +1234,8 @@ Return in JSON:
                 var newUserWeakPoint = await _userWeakPointService.AddAsync(new RequestUserWeakPointDto
                 {
                     UserId = userId,
-                    WeakPoint = analysisResult.WeakPoint,
-                    Advice = analysisResult.Advice,
+                    WeakPoint = $"Weakpoint in {quiz.TOEICPart} at point range {quizSet.DifficultyLevel}: " + analysisResult.WeakPoint,
+                    Advice = $"Advice in {quiz.TOEICPart} at point range {quizSet.DifficultyLevel}: " + analysisResult.Advice,
                     IsDone = false
                 });
             }
