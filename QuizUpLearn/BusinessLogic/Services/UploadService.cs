@@ -70,20 +70,11 @@ namespace BusinessLogic.Services
             var segments = uri.Segments;
             var folder = segments[^2].TrimEnd('/');
             var fileNameDecoded = Uri.UnescapeDataString(segments[^1]);
+            var fileName = Path.GetFileName(fileNameDecoded);
 
-            string finalPublicId;
-            ResourceType resourceType;
+            var finalPublicId = $"{folder}/{fileName}";
 
-            if (folder == "files") // raw files
-            {
-                finalPublicId = $"{folder}/{fileNameDecoded}"; // keep extension
-                resourceType = ResourceType.Raw;
-            }
-            else // images
-            {
-                finalPublicId = $"{folder}/{Path.GetFileNameWithoutExtension(fileNameDecoded)}";
-                resourceType = ResourceType.Image;
-            }
+            var resourceType = folder == "files" ? ResourceType.Raw : ResourceType.Image;
 
             var deletionParams = new DeletionParams(finalPublicId)
             {
