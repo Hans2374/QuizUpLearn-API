@@ -20,12 +20,12 @@ namespace BusinessLogic.Services
             _cloudinary = new Cloudinary(account);
         }
 
-        public async Task<(string Url, string PublicId)> UploadAsync(IFormFile file, string? publicId = null)
+        public async Task<(string Url, string PublicId)> UploadAsync(IFormFile file)
         {
             if (file == null || file.Length == 0)
-                return (null, null);
+                return (string.Empty, string.Empty);
 
-            var finalPublicId = publicId ?? Path.GetFileNameWithoutExtension(file.FileName);
+            var finalPublicId = Path.GetFileNameWithoutExtension(file.FileName);
             var extension = Path.GetExtension(file.FileName).ToLower();
 
             await using var stream = file.OpenReadStream();
@@ -43,7 +43,7 @@ namespace BusinessLogic.Services
 
                 var uploadResult = await _cloudinary.UploadAsync(uploadParams);
                 var outputPublicId = "images/" + finalPublicId;
-                return (uploadResult.SecureUrl?.ToString(), outputPublicId);
+                return (uploadResult.SecureUrl?.ToString()!, outputPublicId);
             }
             else
             {
@@ -58,28 +58,30 @@ namespace BusinessLogic.Services
 
                 var uploadResult = await _cloudinary.UploadAsync(uploadParams);
                 var outputPublicId = "files/" + finalPublicId;
-                return (uploadResult.SecureUrl?.ToString(), outputPublicId);
+                return (uploadResult.SecureUrl?.ToString()!, outputPublicId);
             }
         }
-        public async Task<bool> DeleteFileAsync(string? fileUrl = null, string? publicId = null)
+        public async Task<bool> DeleteFileAsync(string? fileUrl = null)
         {
-            if (string.IsNullOrEmpty(publicId) && string.IsNullOrEmpty(fileUrl))
+            if (string.IsNullOrEmpty(fileUrl))
                 return false;
 
-            var finalPublicId = publicId;
-            if (string.IsNullOrEmpty(finalPublicId) && !string.IsNullOrEmpty(fileUrl))
+            var uri = new Uri(fileUrl);
+            var segments = uri.Segments;
+            var folder = segments[^2].TrimEnd('/');
+            var fileNameDecoded = Uri.UnescapeDataString(segments[^1]);
+            var fileName = Path.GetFileName(fileNameDecoded);
+
+            var finalPublicId = $"{folder}/{fileName}";
+
+            var resourceType = folder == "files" ? ResourceType.Raw : ResourceType.Image;
+
+            var deletionParams = new DeletionParams(finalPublicId)
             {
-                var uri = new Uri(fileUrl);
-                var segments = uri.Segments;
-                var folder = segments[^2].TrimEnd('/');
-                var fileNameDecoded = Uri.UnescapeDataString(segments[^1]);
-                var fileName = Path.GetFileNameWithoutExtension(fileNameDecoded);
-                finalPublicId = $"{folder}/{fileName}";
-            }
+                ResourceType = resourceType
+            };
 
-            var deletionParams = new DeletionParams(finalPublicId);
             var result = await _cloudinary.DestroyAsync(deletionParams);
-
             return result.Result == "ok";
         }
 
