@@ -22,13 +22,13 @@ namespace QuizUpLearn.API.Controllers
         /// <param name="publicId">If the file that already uploaded then should put public id to trigger replace</param>
         /// <returns></returns>
         [HttpPost("upload")]
-        public async Task<IActionResult> UploadFile(IFormFile file, string? publicId = null)
+        public async Task<IActionResult> UploadFile(IFormFile file)
         {
             if (file == null || file.Length == 0)
             {
                 return BadRequest("No file uploaded.");
             }
-            var result = await _uploadService.UploadAsync(file, publicId);
+            var result = await _uploadService.UploadAsync(file);
             if(string.IsNullOrEmpty(result.Url))
                 return StatusCode(StatusCodes.Status500InternalServerError, "File upload failed.");
             return Ok(new { fileUrl = result.Url, publicId = result.PublicId });
@@ -40,9 +40,9 @@ namespace QuizUpLearn.API.Controllers
         /// <param name="publicId"></param>
         /// <returns></returns>
         [HttpDelete("delete")]
-        public async Task<IActionResult> Delete([FromQuery] string fileUrl, [FromQuery] string? publicId = null)
+        public async Task<IActionResult> Delete([FromQuery] string fileUrl)
         {
-            var success = await _uploadService.DeleteFileAsync(fileUrl, publicId);
+            var success = await _uploadService.DeleteFileAsync(fileUrl);
 
             if (!success)
                 return NotFound("File not found or failed to delete");
