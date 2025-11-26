@@ -43,6 +43,34 @@ namespace QuizUpLearn.API.Controllers
 			}
 		}
 
+		[HttpGet("month/{year:int}/{month:int}")]
+		[AllowAnonymous]
+		public async Task<ActionResult<ApiResponse<IEnumerable<TournamentResponseDto>>>> GetByMonth(
+			[FromRoute] int year, 
+			[FromRoute] int month,
+			[FromQuery] bool includeDeleted = false)
+		{
+			try
+			{
+				if (month < 1 || month > 12)
+				{
+					return BadRequest(new ApiResponse<IEnumerable<TournamentResponseDto>> 
+					{ 
+						Success = false, 
+						Message = "Tháng phải từ 1 đến 12" 
+					});
+				}
+
+				var res = await _tournamentService.GetByMonthAsync(year, month, includeDeleted);
+				return Ok(new ApiResponse<IEnumerable<TournamentResponseDto>> { Success = true, Data = res, Message = "OK" });
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Get tournaments by month failed");
+				return BadRequest(new ApiResponse<IEnumerable<TournamentResponseDto>> { Success = false, Message = ex.Message });
+			}
+		}
+
 		[HttpPost("create")]
 		public async Task<ActionResult<ApiResponse<TournamentResponseDto>>> Create([FromBody] CreateTournamentRequestDto dto)
 		{

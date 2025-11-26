@@ -14,7 +14,6 @@ namespace BusinessLogic.Services
         private readonly IQuizAttemptRepo _attemptRepo;
         private readonly IAnswerOptionRepo _answerOptionRepo;
         private readonly IQuizRepo _quizRepo;
-            private readonly IUserRepo _userRepo;
         private readonly IUserMistakeService _userMistakeService;
         private readonly IUserMistakeRepo _userMistakeRepo;
         private readonly IAIService _aiService;
@@ -26,7 +25,6 @@ namespace BusinessLogic.Services
             IQuizAttemptRepo attemptRepo,
             IAnswerOptionRepo answerOptionRepo,
             IQuizRepo quizRepo,
-                IUserRepo userRepo,
             IUserMistakeService userMistakeService,
             IUserMistakeRepo userMistakeRepo,
             IAIService aiService,
@@ -37,7 +35,6 @@ namespace BusinessLogic.Services
             _attemptRepo = attemptRepo;
             _answerOptionRepo = answerOptionRepo;
             _quizRepo = quizRepo;
-            _userRepo = userRepo;
             _userMistakeService = userMistakeService;
             _userMistakeRepo = userMistakeRepo;
             _aiService = aiService;
@@ -412,30 +409,18 @@ namespace BusinessLogic.Services
             // Quy đổi điểm TOEIC
             int lisPoint = ConvertToTOEICScore(correctLisCount, isListening: true);
             int reaPoint = ConvertToTOEICScore(correctReaCount, isListening: false);
-            int totalPlacementScore = lisPoint + reaPoint;
 
             // Cập nhật QuizAttempt để lưu vào history
             attempt.AttemptType = "placement";
             attempt.CorrectAnswers = correctLisCount + correctReaCount;
             attempt.WrongAnswers = attempt.TotalQuestions - attempt.CorrectAnswers;
-            attempt.Score = totalPlacementScore;
+            attempt.Score = lisPoint + reaPoint;
             attempt.Accuracy = attempt.TotalQuestions > 0 ? (decimal)attempt.CorrectAnswers / attempt.TotalQuestions : 0;
             attempt.Status = "completed";
             attempt.IsCompleted = true;
             attempt.TimeSpent = totalTimeSpent > 0 ? totalTimeSpent : (int?)null;
 
             await _attemptRepo.UpdateAsync(dto.AttemptId, attempt);
-
-            // Cập nhật TotalPoints của user nếu điểm placement lần này cao hơn
-            if (attempt.UserId != Guid.Empty)
-            {
-                var user = await _userRepo.GetByIdAsync(attempt.UserId);
-                if (user != null && totalPlacementScore > user.TotalPoints)
-                {
-                    user.TotalPoints = totalPlacementScore;
-                    await _userRepo.UpdateAsync(user.Id, user);
-                }
-            }
 
             var response = new ResponsePlacementTestDto
             {
@@ -540,16 +525,16 @@ namespace BusinessLogic.Services
 
         private static readonly Dictionary<int, int> ListeningScoreMap = new()
 {
-    {0,5},{1,5},{2,5},{3,5},{4,10},{5,15},{6,20},{7,30},{8,35},{9,40},{10,45},
-    {11,50},{12,55},{13,60},{14,65},{15,70},{16,75},{17,80},{18,85},{19,90},{20,95},
-    {21,100},{22,105},{23,110},{24,115},{25,120},{26,125},{27,130},{28,135},{29,140},{30,145},
-    {31,150},{32,155},{33,160},{34,165},{35,170},{36,175},{37,180},{38,185},{39,190},{40,195},
-    {41,200},{42,205},{43,210},{44,215},{45,220},{46,225},{47,230},{48,235},{49,240},{50,245},
-    {51,250},{52,255},{53,260},{54,265},{55,270},{56,275},{57,280},{58,285},{59,290},{60,295},
-    {61,300},{62,305},{63,310},{64,315},{65,320},{66,325},{67,330},{68,335},{69,340},{70,345},
-    {71,350},{72,355},{73,360},{74,365},{75,370},{76,375},{77,380},{78,385},{79,390},{80,395},
-    {81,400},{82,405},{83,410},{84,415},{85,420},{86,425},{87,430},{88,435},{89,440},{90,445},
-    {91,450},{92,455},{93,460},{94,465},{95,470},{96,475},{97,480},{98,485},{99,490},{100,495}
+    {0,5},{1,15},{2,20},{3,25},{4,30},{5,35},{6,40},{7,45},{8,50},{9,55},
+    {10,60},{11,65},{12,70},{13,75},{14,80},{15,85},{16,90},{17,95},{18,100},{19,105},
+    {20,110},{21,115},{22,120},{23,125},{24,130},{25,135},{26,140},{27,145},{28,150},{29,155},
+    {30,160},{31,165},{32,170},{33,175},{34,180},{35,185},{36,190},{37,195},{38,200},{39,205},
+    {40,210},{41,215},{42,220},{43,225},{44,230},{45,235},{46,240},{47,245},{48,250},{49,255},
+    {50,260},{51,265},{52,270},{53,275},{54,280},{55,285},{56,290},{57,295},{58,300},{59,305},
+    {60,310},{61,315},{62,320},{63,325},{64,330},{65,335},{66,340},{67,345},{68,350},{69,355},
+    {70,360},{71,365},{72,370},{73,375},{74,380},{75,385},{76,395},{77,400},{78,405},{79,410},
+    {80,415},{81,420},{82,425},{83,430},{84,435},{85,440},{86,445},{87,450},{88,455},{89,460},
+    {90,465},{91,470},{92,475},{93,480},{94,485},{95,490},{96,495},{97,495},{98,495},{99,495},{100,495}
 };
 
         private static readonly Dictionary<int, int> ReadingScoreMap = new()

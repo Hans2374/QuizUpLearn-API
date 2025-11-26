@@ -41,10 +41,11 @@ namespace Repository.Repositories
 			return entity;
 		}
 
-		public async Task<bool> ExistsInMonthAsync(int year, int month)
+		public async Task<bool> ExistsStartedInMonthAsync(int year, int month)
 		{
 			return await _context.Tournaments
 				.AnyAsync(t => t.DeletedAt == null 
+					&& t.Status == "Started"
 					&& t.StartDate.Year == year 
 					&& t.StartDate.Month == month);
 		}
@@ -71,6 +72,16 @@ namespace Repository.Repositories
 		{
 			return await _context.Tournaments
 				.Where(t => includeDeleted || t.DeletedAt == null)
+				.OrderByDescending(t => t.CreatedAt)
+				.ToListAsync();
+		}
+
+		public async Task<IEnumerable<Tournament>> GetByMonthAsync(int year, int month, bool includeDeleted = false)
+		{
+			return await _context.Tournaments
+				.Where(t => (includeDeleted || t.DeletedAt == null)
+					&& t.StartDate.Year == year
+					&& t.StartDate.Month == month)
 				.OrderByDescending(t => t.CreatedAt)
 				.ToListAsync();
 		}

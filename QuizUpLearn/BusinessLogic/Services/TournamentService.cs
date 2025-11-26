@@ -29,11 +29,11 @@ namespace BusinessLogic.Services
 			if (dto.StartDate.Kind != DateTimeKind.Utc) dto.StartDate = DateTime.SpecifyKind(dto.StartDate, DateTimeKind.Utc);
 			if (dto.EndDate.Kind != DateTimeKind.Utc) dto.EndDate = DateTime.SpecifyKind(dto.EndDate, DateTimeKind.Utc);
 
-			// Kiểm tra mỗi tháng chỉ được tạo 1 tournament
+			// Kiểm tra nếu đã có tournament "Started" trong tháng thì không cho tạo mới
 			var startDate = dto.StartDate.Date;
-			if (await _tournamentRepo.ExistsInMonthAsync(startDate.Year, startDate.Month))
+			if (await _tournamentRepo.ExistsStartedInMonthAsync(startDate.Year, startDate.Month))
 			{
-				throw new ArgumentException($"Đã tồn tại tournament trong tháng {startDate.Month}/{startDate.Year}. Mỗi tháng chỉ được tạo 1 tournament.");
+				throw new ArgumentException($"Đã tồn tại tournament đang 'Started' trong tháng {startDate.Month}/{startDate.Year}. Không thể tạo tournament mới khi đã có tournament đang chạy.");
 			}
 
 			var entity = new Tournament
@@ -263,6 +263,20 @@ namespace BusinessLogic.Services
 		public async Task<IEnumerable<TournamentResponseDto>> GetAllAsync(bool includeDeleted = false)
 		{
 			var tournaments = await _tournamentRepo.GetAllAsync(includeDeleted);
+			var result = new List<TournamentResponseDto>();
+			
+			foreach (var t in tournaments)
+			{
+				var quizSets = await _tournamentQuizSetRepo.GetByTournamentAsync(t.Id);
+				result.Add(MapResponse(t, quizSets.Count()));
+			}
+			
+			return result;
+		}
+
+		public async Task<IEnumerable<TournamentResponseDto>> GetByMonthAsync(int year, int month, bool includeDeleted = false)
+		{
+			var tournaments = await _tournamentRepo.GetByMonthAsync(year, month, includeDeleted);
 			var result = new List<TournamentResponseDto>();
 			
 			foreach (var t in tournaments)
