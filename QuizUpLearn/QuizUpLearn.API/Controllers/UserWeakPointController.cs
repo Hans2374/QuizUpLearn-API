@@ -1,8 +1,9 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using BusinessLogic.DTOs;
 using BusinessLogic.DTOs.UserWeakPointDtos;
 using BusinessLogic.Interfaces;
-using BusinessLogic.DTOs;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using QuizUpLearn.API.Attributes;
 
 namespace QuizUpLearn.API.Controllers
 {
@@ -19,10 +20,12 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpGet("user/{userId}")]
+        [SubscriptionAndRoleAuthorize]
         public async Task<ActionResult<PaginationResponseDto<ResponseUserWeakPointDto>>> GetByUserId(
-            Guid userId,
             [FromQuery] PaginationRequestDto pagination)
         {
+            var userId = (Guid)HttpContext.Items["UserId"]!;
+
             var result = await _service.GetByUserIdAsync(userId, pagination);
             return Ok(result);
         }

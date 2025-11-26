@@ -36,6 +36,8 @@ namespace BusinessLogic.Services
         private readonly string _maleVoiceId;
         private readonly string _femaleVoiceId;
         private readonly string _narratorVoiceId;
+        //Helpers
+        private readonly PromptGenerateQuizSetHelper _promptGenerator;
         public AIService(HttpClient httpClient, IConfiguration configuration, IQuizSetService quizSetService, IQuizService quizService, IAnswerOptionService answerOptionService, IUploadService uploadService, ILogger<AIService> logger, IQuizGroupItemService quizGroupItemService, IUserMistakeService userMistakeService, IUserWeakPointService userWeakPointService)
         {
             _httpClient = httpClient;
@@ -58,6 +60,8 @@ namespace BusinessLogic.Services
             _maleVoiceId = configuration["AsyncTTS:Voices:Male"] ?? throw new ArgumentNullException("Male voice id is not configured");
             _femaleVoiceId = configuration["AsyncTTS:Voices:Female"] ?? throw new ArgumentNullException("Female voice id is not configured"); ;
             _narratorVoiceId = configuration["AsyncTTS:Voices:Narrator"] ?? throw new ArgumentNullException("Narrator voice id is not configured");
+
+            _promptGenerator = new PromptGenerateQuizSetHelper();
         }
 
         private async Task<string> GeminiGenerateContentAsync(string prompt)
@@ -308,43 +312,7 @@ namespace BusinessLogic.Services
                 }
                 var options = await _answerOptionService.GetByQuizIdAsync(quiz.Id);
                 // Prepare validation prompt
-                var validationPrompt = $@"
-You are an expert TOEIC test validator.
-Review this quiz for correctness and clarity.
-
-### Quiz Set Context:
-TOEIC practice quiz titled: '{quizSet.Title}'.
-Description: {quizSet.Description}, 
-Toeic part: {quiz.TOEICPart},
-suitable for learners with TOEIC scores around {quizSet.DifficultyLevel}.
-
-### Quiz to Validate
-Additional info(if any):
-- Passage: {groupPassage}
-
-- Audio script: {groupAudioScript}
-
-- Image description: {groupImageDescription}
-
-Question: {quiz.QuestionText}
-
-Options:
-{string.Join("\n", options.Select(o => $"{o.OptionLabel}. {o.OptionText} (Correct: {o.IsCorrect})"))}
-
-Check the criteria and :
-1. The question is grammatically correct and meaningful.
-2. There is ONE or more correct answer.
-3. The correct answer makes sense in context.
-4. Not duplicating or very similar options.
-5. If it is TOEIC part 2, question text and option text will be null because of that all you need to check the audio script, inside that audio script it will have the question and the answer options.
-6. No need suggestion improvement, only validate correctness, explain shortly at Feedback field if the question is invalid otherwise return feedback with empty string.
-
-Return only these 2 fields as JSON structure:
-{{ 
-    ""IsValid"": true/false,
-    ""Feedback"": "".....""
-}}
-";
+                var validationPrompt = _promptGenerator.GetValidationPromptAsync(quizSet, quiz, quiz.AnswerOptions, groupPassage, groupAudioScript, groupImageDescription);
                 var response = await OpenRouterGenerateContentAsync(validationPrompt);
                 
                 var validation = JsonSerializer.Deserialize<AiValidationResponseDto>(response ?? string.Empty);
@@ -375,35 +343,7 @@ Return only these 2 fields as JSON structure:
 
             for (int i = 0; i < inputData.QuestionQuantity; i++)
             {
-                var prompt = $@"
-Generate a TOEIC practice quiz titled: '{inputData.Topic}'.
-Description: Focus on TOEIC Part 1 , 
-suitable for learners with TOEIC scores around {inputData.Difficulty}.
-Question should describe a photo scene with one correct answer among four choices. 
-The image should be described in detail with atleast 50 words.
-
-Avoid previous image description(if any): {previousImageDescription}
-
-Generate ONE question that matches this theme.
-
-Avoid previous question text(if any): {previousQuestionText}
-
-Need to return 3 field:
-- ImageDescription: A detailed description of the image related to the question.
-- QuestionText: The question text.
-- AnswerOptions: List of 4 answer options with labels and correctness. Each option must have option label(A/B/C/D), option text, isCorrect(true/false).
-
-Only return in this structure no need any extended field/infor:
-{{
-  ""ImageDescription"": ""..."",
-  ""QuestionText"": ""..."",
-  ""AnswerOptions"": [
-    {{ ""OptionLabel"": ""A"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""B"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""C"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""D"", ""OptionText"": ""..."", ""IsCorrect"": true/false }}
-  ]
-}}";
+                var prompt = _promptGenerator.GetQuizSetPart1Prompt(inputData, previousImageDescription, previousQuestionText);
                 var response = await GeminiGenerateContentAsync(prompt);
                 
 
@@ -487,29 +427,8 @@ Only return in this structure no need any extended field/infor:
             string previousQuestionText = string.Empty;
             for (int i = 0; i < inputData.QuestionQuantity; i++)
             {
-                var prompt = $@"
-Generate a TOEIC practice quiz titled: '{inputData.Topic}'.
-Description: Focus on TOEIC Part 2, 
-suitable for learners with TOEIC scores around {inputData.Difficulty}.
-Question have 3 answers, each answer should have different context then the correct one is the answer that fit with the topic, you have to generate question text, answer options. 
+                var prompt = _promptGenerator.GetQuizSetPart2Prompt(inputData, previousQuestionText);
 
-Generate ONE question that matches this theme.
-
-Avoid previous question text(if any): {previousQuestionText}
-
-Need to return 2 field:
-- QuestionText: The question text.
-- AnswerOptions: List of 4 answer options with labels and correctness. Each option must have option label(A/B/C/D), option text, isCorrect(true/false).
-
-Only return in this structure no need any extended field/infor:
-{{
-  ""QuestionText"": ""..."",
-  ""AnswerOptions"": [
-    {{ ""OptionLabel"": ""A"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""B"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""C"", ""OptionText"": ""..."", ""IsCorrect"": true/false }}
-  ]
-}}";
                 var response = await GeminiGenerateContentAsync(prompt);
                 AiGenerateQuizResponseDto? quiz;
                 try
@@ -581,26 +500,7 @@ Only return in this structure no need any extended field/infor:
 
             for (int i = 0; i < inputData.QuestionQuantity; i += 3)
             {
-                var audioPrompt = $@"
-Generate a TOEIC audio topic: '{inputData.Topic}'.
-Description: Focus on TOEIC Part 3, 
-suitable for learners with TOEIC scores around {inputData.Difficulty}.
-
-Avoid the previous audio script(if it is not null): {previousAudioScript}
-
-Generate ONE generate audio script that contain a short conservation between TWO people (different gender) and matches this theme.
-The audio must have 3-5 exchanges (each person speak 2-3 times) and each exchange should have 15-30 words (must have 2-3 sentences in 1 exchange).
-
-Only return in this structure:
-{{
-  ""AudioScripts"": [
-    {{ ""Role"": ""Male"", ""Text"": ""..."" }},
-    {{ ""Role"": ""Female"", ""Text"": ""..."" }},
-    {{ ""Role"": ""Male"", ""Text"": ""Where are you going?"" }},
-    {{ ""Role"": ""Female"", ""Text"": ""To the office."" }},
-......
-]
-}}";
+                var audioPrompt = _promptGenerator.GetPart3AudioPrompt(inputData, previousAudioScript);
                 var audioResponse = await GeminiGenerateContentAsync(audioPrompt);
                 AiConversationAudioScriptResponseDto? conversationScripts;
                 try
@@ -640,26 +540,7 @@ Only return in this structure:
                 string previousQuizText = string.Empty;
                 for (int j = 0; j < 3 && i + j < inputData.QuestionQuantity; j++)
                 {
-                    var quizPrompt = $@"
-Based on this audio script: {audioResponse}
-Generate ONE TOEIC Part 3 question with 3 wrong answers and 1 correct answer.
-
-Avoid the previous question text(if it is not null): {previousQuizText}
-
-Need to return 2 field:
-- QuestionText: The question text.
-- AnswerOptions: List of 4 answer options with labels and correctness. Each option must have option label(A/B/C/D), option text, isCorrect(true/false).
-
-Only return in this structure no need any extended field/infor:
-{{
-  ""QuestionText"": ""..."",
-  ""AnswerOptions"": [
-    {{ ""OptionLabel"": ""A"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""B"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""C"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""D"", ""OptionText"": ""..."", ""IsCorrect"": true/false }}
-  ]
-}}";
+                    var quizPrompt = _promptGenerator.GetPart3QuizPrompt(audioResponse, previousQuizText);
                     var response = await GeminiGenerateContentAsync(quizPrompt);
                     AiGenerateQuizResponseDto? quiz;
                     try
@@ -709,25 +590,13 @@ Only return in this structure no need any extended field/infor:
             
             for (int i = 0; i < inputData.QuestionQuantity; i += 3)
             {
-                var audioPrompt = $@"
-Generate a TOEIC audio topic: '{inputData.Topic}'.
-Description: Focus on TOEIC Part 4, 
-suitable for learners with TOEIC scores around {inputData.Difficulty}.
-
-Avoid the previous audio script(if it is not null): {previousAudioScript}
-
-Generate ONE audio script that contain a short monologue (announcement/speech) matches this theme.
-
-Only return in this structure:
-{{
-  ""AudioScript"": ""...""
-}}";
+                var audioPrompt = _promptGenerator.GetPart4AudioPrompt(inputData, previousAudioScript);
                 var audioResponse = await GeminiGenerateContentAsync(audioPrompt);
-                AiGenerateQuizResponseDto? audioScripts = new();
+                AiGenerateQuizResponseDto? audio = new();
                 try
                 {
-                    audioScripts = JsonSerializer.Deserialize<AiGenerateQuizResponseDto>(audioResponse);
-                    if (audioScripts == null || string.IsNullOrEmpty(audioScripts.AudioScript))
+                    audio = JsonSerializer.Deserialize<AiGenerateQuizResponseDto>(audioResponse);
+                    if (audio == null || string.IsNullOrEmpty(audio.AudioScript))
                         throw new Exception("Failed to generate valid audio script from AI.");
                 }
                 catch(Exception ex)
@@ -738,9 +607,9 @@ Only return in this structure:
                 }
                 
 
-                previousAudioScript = string.Join("\n", audioScripts.AudioScript);
+                previousAudioScript = string.Join("\n", audio.AudioScript);
 
-                var audioBytes = await GenerateAudioAsync(audioScripts.AudioScript!, VoiceRoles.Narrator);
+                var audioBytes = await GenerateAudioAsync(audio.AudioScript!, VoiceRoles.Narrator);
                 var audioFile = await _uploadService.ConvertByteArrayToIFormFile(audioBytes, $"audio-G4_{i / 3 + 1}-{inputData.CreatorId}-{DateTime.UtcNow}.mp3", "audio/mpeg");
                 var audioResult = await _uploadService.UploadAsync(audioFile);
 
@@ -749,7 +618,7 @@ Only return in this structure:
                     QuizSetId = quizSetId,
                     Name = $"Group4_{i / 3 + 1}",
                     AudioUrl = audioResult.Url,
-                    AudioScript = audioScripts.AudioScript
+                    AudioScript = audio.AudioScript
                 });
 
                 if(groupItem == null)
@@ -762,26 +631,7 @@ Only return in this structure:
                 string previousQuizText = string.Empty;
                 for (int j = 0; j < 3 && i + j < inputData.QuestionQuantity; j++)
                 {
-                    var quizPrompt = $@"
-Based on this audio script: {audioResponse}
-Generate ONE TOEIC Part 4 question with 3 wrong answers and 1 correct answer.
-
-Avoid the previous question text(if it is not null): {previousQuizText}
-
-Need to return 2 field:
-- QuestionText: The question text.
-- AnswerOptions: List of 4 answer options with labels and correctness. Each option must have option label(A/B/C/D), option text, isCorrect(true/false).
-
-Only return in this structure no need any extended field/infor:
-{{
-  ""QuestionText"": ""..."",
-  ""AnswerOptions"": [
-    {{ ""OptionLabel"": ""A"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""B"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""C"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""D"", ""OptionText"": ""..."", ""IsCorrect"": true/false }}
-  ]
-}}";
+                    var quizPrompt = _promptGenerator.GetPart4QuizPrompt(audio.AudioScript, previousQuizText);
                     var response = await GeminiGenerateContentAsync(quizPrompt);
                     AiGenerateQuizResponseDto? quiz = new();
                     try
@@ -832,29 +682,7 @@ Only return in this structure no need any extended field/infor:
 
             for (int i = 0; i < inputData.QuestionQuantity; i++)
             {
-                var prompt = $@"
-Generate a TOEIC practice quiz titled: '{inputData.Topic}'.
-Description: Focus on TOEIC Part 5 - in this part the question will be an incomplete sentence with 4 answer to fill in, 
-suitable for learners with TOEIC scores around {inputData.Difficulty}.
-
-Generate ONE question that matches this theme.
-
-Avoid previous question text(if any): {previousQuestionText}
-
-Need to return 2 field:
-- QuestionText: The question text.
-- AnswerOptions: List of 4 answer options with labels and correctness. Each option must have option label(A/B/C/D), option text, isCorrect(true/false).
-
-Only return in this structure no need any extended field/infor:
-{{
-  ""QuestionText"": ""..."",
-  ""AnswerOptions"": [
-    {{ ""OptionLabel"": ""A"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""B"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""C"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""D"", ""OptionText"": ""..."", ""IsCorrect"": true/false }}
-  ]
-}}";
+                var prompt = _promptGenerator.GetPart5Prompt(inputData, previousQuestionText);
                 var response = await GeminiGenerateContentAsync(prompt);
                 AiGenerateQuizResponseDto? quiz;
                 try
@@ -903,19 +731,7 @@ Only return in this structure no need any extended field/infor:
 
             for (int i = 0; i < inputData.QuestionQuantity; i += 4)
             {
-                var passagePrompt = $@"
-Generate a TOEIC passage: '{inputData.Topic}'.
-Description: Focus on TOEIC Part 6, 
-suitable for learners with TOEIC scores around {inputData.Difficulty}.
-
-Avoid the previous passage(if it is not null): {previousPassages}
-
-Generate ONE passage match the theme - generate fully passage without any blanks (at least 75 words with 6 sentences).
-
-Only return in this structure:
-{{
-  ""Passage"": ""..."",
-}}";
+                var passagePrompt = _promptGenerator.GetPart6PassagePrompt(inputData, previousPassages);
                 var passageResponse = await GeminiGenerateContentAsync(passagePrompt);
                 AiGenerateQuizResponseDto? passageResult;
                 try
@@ -950,28 +766,7 @@ Only return in this structure:
 
                 for (int j = 1; j <= 4 && i + j <= inputData.QuestionQuantity; j++)
                 {
-                    var quizPrompt = $@"
-Based on this passage: {passageResult.Passage}
-Replace the {j}th important word with a blank marked as ({j}).
-
-Avoid using these previous blanks(if any): [{string.Join(", ", usedBlanks)}]
-
-Return the question text with ({j}) and 4 answer options (1 correct, 3 wrong). Return the modified passage as 'QuestionText'
-
-Need to return 2 field:
-- QuestionText: The question text.
-- AnswerOptions: List of 4 answer options with labels and correctness. Each option must have option label(A/B/C/D), option text, isCorrect(true/false).
-
-Only return in this structure no need any extended field/infor:
-{{
-  ""QuestionText"": """",
-  ""AnswerOptions"": [
-    {{ ""OptionLabel"": ""A"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""B"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""C"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""D"", ""OptionText"": ""..."", ""IsCorrect"": true/false }}
-  ]
-}}";
+                    var quizPrompt = _promptGenerator.GetPart6QuizPrompt(passageResult.Passage, j, usedBlanks);
                     var response = await GeminiGenerateContentAsync(quizPrompt);
                     AiGenerateQuizResponseDto? quiz;
                     try
@@ -1024,8 +819,6 @@ Only return in this structure no need any extended field/infor:
                 });
 
             }
-
-
             return true;
         }
 
@@ -1035,17 +828,7 @@ Only return in this structure no need any extended field/infor:
 
             for (int i = 0; i < inputData.QuestionQuantity; i += 3)
             {
-                var passagePrompt = $@"
-Generate a TOEIC Part 7 reading passage about '{inputData.Topic}' 
-for learners with TOEIC score around {inputData.Difficulty}.
-Avoid repeating previous passages: {previousPassages}.
-Length: around 120-150 words.
-
-Return only JSON:
-{{
-  ""Passage"": ""...""
-}}";
-
+                var passagePrompt = _promptGenerator.GetPart7PassagePrompt(inputData, previousPassages);
                 var passageResponse = await GeminiGenerateContentAsync(passagePrompt);
                 AiGenerateQuizResponseDto? passageResult;
                 try
@@ -1080,26 +863,7 @@ Return only JSON:
                 string previousQuizText = string.Empty;
                 for (int j = 1; j <= 3 && i + j <= inputData.QuestionQuantity; j++)
                 {
-                    var quizPrompt = $@"
-Based on this TOEIC passage: {passageResult.Passage}
-Generate ONE reading comprehension question (like TOEIC Part 7).
-Include 4 options (A–D) with 1 correct answer.
-
-Avoid previous question text(if any): {previousQuizText}
-Need to return 2 field:
-- QuestionText: The question text.
-- AnswerOptions: List of 4 answer options with labels and correctness. Each option must have option label(A/B/C/D), option text, isCorrect(true/false).
-
-Return JSON:
-{{
-  ""QuestionText"": ""..."",
-  ""AnswerOptions"": [
-    {{ ""OptionLabel"": ""A"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""B"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""C"", ""OptionText"": ""..."", ""IsCorrect"": true/false }},
-    {{ ""OptionLabel"": ""D"", ""OptionText"": ""..."", ""IsCorrect"": true/false }}
-  ]
-}}";
+                    var quizPrompt = _promptGenerator.GetPart7QuizPrompt(passageResult.Passage, previousQuizText);
                     var response = await GeminiGenerateContentAsync(quizPrompt);
                     AiGenerateQuizResponseDto? quiz;
                     try
@@ -1147,7 +911,11 @@ Return JSON:
 
         public async Task<PaginationResponseDto<ResponseUserWeakPointDto>> AnalyzeUserMistakesAndAdviseAsync(Guid userId)
         {
-            var userMistakes = await _userMistakeService.GetAllByUserIdAsync(userId, null!);
+            var userMistakes = await _userMistakeService.GetAllByUserIdAsync(userId, new PaginationRequestDto
+            {
+                Page = 1,
+                PageSize = 100
+            });
             var existingWeakPoints = string.Empty;
             var existingAdvices = string.Empty;
 
@@ -1170,36 +938,18 @@ Return JSON:
                 foreach (var wp in userWeakPoints.Data)
                 {
                     if (userWeakPoints == null || userWeakPoints.Data.Count() == 0) continue;
-                    existingWeakPoints += wp.WeakPoint + ", ";
+                    existingWeakPoints += wp.WeakPoint + "\n";
 
                     if (!string.IsNullOrEmpty(wp.Advice))
-                        existingAdvices += wp.Advice + ", ";
+                        existingAdvices += wp.Advice + "\n";
                 }
 
                 await _userMistakeService.UpdateAsync(mistake.Id, new RequestUserMistakeDto
                 {
                     IsAnalyzed = true
                 });
-                var prompt = $@"This is a TOEIC practice quiz with the following details:
-Topic: {quizSet.Title}
-TOIEC part: {quiz.TOEICPart}
-Question: {quiz.QuestionText}
-Answer options : {answersText}
-User's wrong answer: {mistake.UserAnswer}
 
-Provide ONE single weakpoint(weak area of skill) out of this question and ONE single advice for the user how to improve in this area.
-
-Avoid duplicated weakpoint(s) if any: {existingWeakPoints}
-
-Avoid duplicated advice(s) if any: {existingAdvices}
-
-If it is duplicated weakpoints just return empty strings for both fields.
-
-Return in JSON:
-{{
-  ""WeakPoint"": ""..."",
-  ""Advice"": ""...""
-}}";
+                var prompt = _promptGenerator.GetAnalyzeMistakePrompt(quizSet, quiz, answersText, mistake);
                 var response = await GeminiGenerateContentAsync(prompt);
 
                 AiAnalyzeWeakpointResponseDto? analysisResult;
@@ -1219,16 +969,21 @@ Return in JSON:
                     || string.IsNullOrEmpty(analysisResult.WeakPoint)
                     || string.IsNullOrEmpty(analysisResult.Advice))
                 {
-                    Console.WriteLine("No new weakpoint or advice generated.");
+                    Console.WriteLine($"Weak point can't be null");
                     continue;
                 }
 
-                //Create new UserWeakPoint
+                if (await _userWeakPointService.IsWeakPointExistedAsync(analysisResult.WeakPoint))
+                {
+                    Console.WriteLine($"Weak point is existed");
+                    continue;
+                }
+
                 var newUserWeakPoint = await _userWeakPointService.AddAsync(new RequestUserWeakPointDto
                 {
                     UserId = userId,
-                    WeakPoint = analysisResult.WeakPoint,
-                    Advice = analysisResult.Advice,
+                    WeakPoint = $"Weakpoint in {quiz.TOEICPart} at point range {quizSet.DifficultyLevel}: " + analysisResult.WeakPoint,
+                    Advice = $"Advice in {quiz.TOEICPart} at point range {quizSet.DifficultyLevel}: " + analysisResult.Advice,
                     IsDone = false
                 });
             }
