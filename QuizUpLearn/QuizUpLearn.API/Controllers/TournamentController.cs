@@ -198,6 +198,41 @@ namespace QuizUpLearn.API.Controllers
 			}
 		}
 
+		[HttpGet("{id:guid}/joined")]
+		public async Task<ActionResult<ApiResponse<object>>> IsJoined([FromRoute] Guid id)
+		{
+			try
+			{
+				var accountIdClaim = User?.FindFirst("UserId")?.Value
+					?? User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
+					?? User?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+				if (string.IsNullOrEmpty(accountIdClaim) || !Guid.TryParse(accountIdClaim, out var accountId))
+				{
+					return Unauthorized(new ApiResponse<object> { Success = false, Message = "Invalid user authentication." });
+				}
+
+				// Lấy UserId từ AccountId
+				var user = await _userService.GetByAccountIdAsync(accountId);
+				if (user == null)
+				{
+					return Unauthorized(new ApiResponse<object> { Success = false, Message = "User not found for this account." });
+				}
+
+				var isJoined = await _tournamentService.IsUserJoinedAsync(id, user.Id);
+				return Ok(new ApiResponse<object> 
+				{ 
+					Success = true, 
+					Data = new { IsJoined = isJoined },
+					Message = isJoined ? "User has joined this tournament" : "User has not joined this tournament"
+				});
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Check joined status failed");
+				return BadRequest(new ApiResponse<object> { Success = false, Message = ex.Message });
+			}
+		}
+
 		[HttpDelete("{id:guid}")]
 		public async Task<ActionResult<ApiResponse<object>>> Delete([FromRoute] Guid id)
 		{

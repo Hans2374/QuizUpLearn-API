@@ -290,6 +290,11 @@ namespace BusinessLogic.Services
 			return result;
 		}
 
+		public async Task<bool> IsUserJoinedAsync(Guid tournamentId, Guid userId)
+		{
+			return await _participantRepo.ExistsAsync(tournamentId, userId);
+		}
+
 		private static TournamentResponseDto MapResponse(Tournament t, int totalQuizSets)
 		{
 			return new TournamentResponseDto
