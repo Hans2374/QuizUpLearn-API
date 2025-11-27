@@ -221,7 +221,8 @@ namespace BusinessLogic.Services
 
 			var startDate = tournament.StartDate.Date;
 			var daysInMonth = DateTime.DaysInMonth(startDate.Year, startDate.Month);
-			var days = daysInMonth - startDate.Day;
+			// Tính số ngày từ StartDate đến cuối tháng (bao gồm cả ngày StartDate)
+			var days = daysInMonth - startDate.Day + 1;
 
 			if (days <= 0)
 			{
@@ -251,7 +252,8 @@ namespace BusinessLogic.Services
 			{
 				TournamentId = tournament.Id,
 				QuizSetId = quizSetId,
-				UnlockDate = startDate.AddDays(index + 1),
+				// UnlockDate bắt đầu từ StartDate (index 0 = StartDate, index 1 = StartDate + 1, ...)
+				UnlockDate = startDate.AddDays(index),
 				IsActive = false,
 				DateNumber = index + 1,
 				CreatedAt = DateTime.UtcNow
