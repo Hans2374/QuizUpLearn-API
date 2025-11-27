@@ -15,6 +15,8 @@ namespace Repository.Entities
         public bool IsPremiumOnly { get; set; } = false;
         public int TotalAttempts { get; set; } = 0;
         public decimal AverageScore { get; set; } = 0;
+        public bool IsRequireValidate { get; set; } = false;
+        public DateTime? ValidatedAt { get; set; }
 
         // Navigation
         public virtual User? Creator { get; set; }
