@@ -43,6 +43,12 @@ namespace BusinessLogic.DTOs
         // Boss Fight Mode stats
         public int TotalDamage { get; set; } = 0; // Total damage dealt to boss
         public int CorrectAnswers { get; set; } = 0; // Number of correct answers
+        
+        // Per-player question tracking for Boss Fight infinite loop mode
+        public int CurrentQuestionIndex { get; set; } = 0; // Current question index for this player
+        public int QuestionLoopCount { get; set; } = 0; // How many times player has looped through all questions
+        public List<int> ShuffledQuestionOrder { get; set; } = new(); // Shuffled order of question indices
+        public HashSet<Guid> AnsweredQuestionIds { get; set; } = new(); // Questions answered in current loop
     }
 
     /// <summary>
@@ -205,5 +211,16 @@ namespace BusinessLogic.DTOs
         public DateTime CompletedAt { get; set; }
         public int TotalPlayers { get; set; }
         public int TotalQuestions { get; set; }
+        
+        // Boss Fight mode properties
+        public bool IsBossFightMode { get; set; } = false;
+        public bool BossDefeated { get; set; } = false;
+        public int BossMaxHP { get; set; }
+        public int BossCurrentHP { get; set; }
+        public int TotalDamageDealt { get; set; }
+        
+        // Force end properties
+        public bool ForceEnded { get; set; } = false;
+        public string? ForceEndReason { get; set; }
     }
 }

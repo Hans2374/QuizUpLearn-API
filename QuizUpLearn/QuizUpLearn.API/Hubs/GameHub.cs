@@ -694,5 +694,252 @@ namespace QuizUpLearn.API.Hubs
                 await Clients.Caller.SendAsync("Error", "An error occurred while getting leaderboard");
             }
         }
+
+        /// <summary>
+        /// Get realtime leaderboard for host/mod during Boss Fight mode
+        /// This can be called periodically by the frontend to update the leaderboard display
+        /// </summary>
+        public async Task GetRealtimeLeaderboard(string gamePin)
+        {
+            try
+            {
+                var session = await _gameService.GetGameSessionAsync(gamePin);
+                if (session == null)
+                {
+                    await Clients.Caller.SendAsync("Error", "Game not found");
+                    return;
+                }
+
+                // Only host can get realtime leaderboard
+                if (!string.Equals(session.HostConnectionId, Context.ConnectionId, StringComparison.OrdinalIgnoreCase))
+                {
+                    await Clients.Caller.SendAsync("Error", "Only host can get realtime leaderboard");
+                    return;
+                }
+
+                if (session.IsBossFightMode)
+                {
+                    // Boss Fight mode: rank by damage
+                    var totalDamage = session.TotalDamageDealt;
+                    var rankings = session.Players
+                        .OrderByDescending(p => p.TotalDamage)
+                        .Select((p, index) => new
+                        {
+                            PlayerName = p.PlayerName,
+                            Score = p.Score,
+                            TotalDamage = p.TotalDamage,
+                            CorrectAnswers = p.CorrectAnswers,
+                            Rank = index + 1,
+                            DamagePercent = totalDamage > 0 ? (double)p.TotalDamage / totalDamage * 100 : 0
+                        })
+                        .ToList();
+
+                    await Clients.Caller.SendAsync("RealtimeLeaderboard", new
+                    {
+                        GamePin = gamePin,
+                        IsBossFightMode = true,
+                        BossCurrentHP = session.BossCurrentHP,
+                        BossMaxHP = session.BossMaxHP,
+                        TotalDamageDealt = totalDamage,
+                        CurrentQuestion = session.CurrentQuestionIndex + 1,
+                        TotalQuestions = session.Questions.Count,
+                        TotalPlayers = session.Players.Count,
+                        Rankings = rankings
+                    });
+                }
+                else
+                {
+                    // Normal mode: rank by score
+                    var rankings = session.Players
+                        .OrderByDescending(p => p.Score)
+                        .Select((p, index) => new
+                        {
+                            PlayerName = p.PlayerName,
+                            Score = p.Score,
+                            CorrectAnswers = p.CorrectAnswers,
+                            Rank = index + 1
+                        })
+                        .ToList();
+
+                    await Clients.Caller.SendAsync("RealtimeLeaderboard", new
+                    {
+                        GamePin = gamePin,
+                        IsBossFightMode = false,
+                        CurrentQuestion = session.CurrentQuestionIndex + 1,
+                        TotalQuestions = session.Questions.Count,
+                        TotalPlayers = session.Players.Count,
+                        Rankings = rankings
+                    });
+                }
+
+                _logger.LogDebug($"📊 Realtime leaderboard sent for game {gamePin}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in GetRealtimeLeaderboard for game {gamePin}");
+                await Clients.Caller.SendAsync("Error", "An error occurred while getting realtime leaderboard");
+            }
+        }
+
+        // ==================== BOSS FIGHT PER-PLAYER FLOW ====================
+        
+        /// <summary>
+        /// Player requests their next question (Boss Fight infinite loop mode)
+        /// Each player progresses independently
+        /// </summary>
+        public async Task GetPlayerNextQuestion(string gamePin)
+        {
+            try
+            {
+                var question = await _gameService.GetPlayerNextQuestionAsync(gamePin, Context.ConnectionId);
+                if (question == null)
+                {
+                    await Clients.Caller.SendAsync("Error", "No question available");
+                    return;
+                }
+
+                await Clients.Caller.SendAsync("PlayerQuestion", question);
+                
+                _logger.LogInformation($"📋 Sent question {question.QuestionNumber} to player {Context.ConnectionId}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in GetPlayerNextQuestion for game {gamePin}");
+                await Clients.Caller.SendAsync("Error", "An error occurred while getting next question");
+            }
+        }
+
+        /// <summary>
+        /// Player submits answer for Boss Fight mode with immediate feedback
+        /// Automatically moves to next question after submission
+        /// </summary>
+        public async Task SubmitBossFightAnswer(string gamePin, string questionId, string answerId)
+        {
+            try
+            {
+                if (!Guid.TryParse(questionId, out var questionGuid) || !Guid.TryParse(answerId, out var answerGuid))
+                {
+                    await Clients.Caller.SendAsync("Error", "Invalid question or answer ID");
+                    return;
+                }
+
+                // Submit answer and get immediate result
+                var result = await _gameService.SubmitBossFightAnswerAsync(gamePin, Context.ConnectionId, questionGuid, answerGuid);
+                if (result == null)
+                {
+                    await Clients.Caller.SendAsync("Error", "Failed to submit answer");
+                    return;
+                }
+
+                // Send immediate feedback to player
+                var session = await _gameService.GetGameSessionAsync(gamePin);
+                var question = session?.Questions.FirstOrDefault(q => q.QuestionId == questionGuid);
+                var correctMap = await _gameService.GetCorrectAnswersForQuestionAsync(gamePin, questionGuid);
+                
+                string correctAnswerText = "";
+                Guid correctAnswerId = Guid.Empty;
+                if (question != null && correctMap != null)
+                {
+                    var correctEntry = correctMap.FirstOrDefault(x => x.Value);
+                    correctAnswerId = correctEntry.Key;
+                    correctAnswerText = question.AnswerOptions.FirstOrDefault(a => a.AnswerId == correctAnswerId)?.OptionText ?? "";
+                }
+
+                await Clients.Caller.SendAsync("BossFightAnswerResult", new
+                {
+                    QuestionId = questionId,
+                    IsCorrect = result.IsCorrect,
+                    PointsEarned = result.PointsEarned,
+                    TimeSpent = result.TimeSpent,
+                    CorrectAnswerId = correctAnswerId,
+                    CorrectAnswerText = correctAnswerText
+                });
+
+                // If correct, deal damage to boss
+                if (result.IsCorrect && session != null)
+                {
+                    var bossDamageResult = await _gameService.DealDamageToBossAsync(gamePin, Context.ConnectionId, result.PointsEarned);
+                    if (bossDamageResult != null)
+                    {
+                        // Broadcast boss damage to all players
+                        await Clients.Group($"Game_{gamePin}").SendAsync("BossDamaged", bossDamageResult);
+
+                        // Check if boss is defeated
+                        if (bossDamageResult.BossCurrentHP <= 0)
+                        {
+                            var bossDefeatedResult = await _gameService.GetBossDefeatedResultAsync(gamePin);
+                            if (bossDefeatedResult != null)
+                            {
+                                await Clients.Group($"Game_{gamePin}").SendAsync("BossDefeated", bossDefeatedResult);
+                                return; // Game ended
+                            }
+                        }
+                    }
+                }
+
+                // Move player to next question
+                await _gameService.MovePlayerToNextQuestionAsync(gamePin, Context.ConnectionId, questionGuid);
+
+                _logger.LogInformation($"⚔️ Player submitted boss fight answer. Correct: {result.IsCorrect}, Points: {result.PointsEarned}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in SubmitBossFightAnswer for game {gamePin}");
+                await Clients.Caller.SendAsync("Error", "An error occurred while submitting answer");
+            }
+        }
+
+        /// <summary>
+        /// Host/Mod force ends the game immediately
+        /// All players see final result with notification
+        /// </summary>
+        public async Task ForceEndGame(string gamePin, string reason = "Game ended by moderator")
+        {
+            try
+            {
+                var session = await _gameService.GetGameSessionAsync(gamePin);
+                if (session == null)
+                {
+                    await Clients.Caller.SendAsync("Error", "Game not found");
+                    return;
+                }
+
+                // Only host can force end
+                if (!string.Equals(session.HostConnectionId, Context.ConnectionId, StringComparison.OrdinalIgnoreCase))
+                {
+                    await Clients.Caller.SendAsync("Error", "Only host can force end the game");
+                    return;
+                }
+
+                var finalResult = await _gameService.ForceEndGameAsync(gamePin, reason);
+                if (finalResult == null)
+                {
+                    await Clients.Caller.SendAsync("Error", "Failed to end game");
+                    return;
+                }
+
+                // Broadcast to all players
+                await Clients.Group($"Game_{gamePin}").SendAsync("GameForceEnded", new
+                {
+                    GamePin = gamePin,
+                    Message = reason,
+                    FinalRankings = finalResult.FinalRankings,
+                    Winner = finalResult.Winner,
+                    IsBossFightMode = finalResult.IsBossFightMode,
+                    BossDefeated = finalResult.BossDefeated,
+                    BossMaxHP = finalResult.BossMaxHP,
+                    BossCurrentHP = finalResult.BossCurrentHP,
+                    TotalDamageDealt = finalResult.TotalDamageDealt,
+                    CompletedAt = finalResult.CompletedAt
+                });
+
+                _logger.LogInformation($"🛑 Game {gamePin} force ended by host. Reason: {reason}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in ForceEndGame for game {gamePin}");
+                await Clients.Caller.SendAsync("Error", "An error occurred while ending game");
+            }
+        }
     }
 }

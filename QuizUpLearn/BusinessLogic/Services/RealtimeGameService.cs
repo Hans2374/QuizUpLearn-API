@@ -114,6 +114,29 @@ namespace BusinessLogic.Services
             }
         }
 
+        /// <summary>
+        /// Get correct answers for a specific question (filters from full correct answers map)
+        /// </summary>
+        public async Task<Dictionary<Guid, bool>?> GetCorrectAnswersForQuestionAsync(string gamePin, Guid questionId)
+        {
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null) return null;
+
+            var question = session.Questions.FirstOrDefault(q => q.QuestionId == questionId);
+            if (question == null) return null;
+
+            var allCorrectAnswers = await GetCorrectAnswersFromRedisAsync(gamePin);
+            if (allCorrectAnswers == null) return null;
+
+            // Filter to only answers for this question
+            var questionAnswerIds = question.AnswerOptions.Select(a => a.AnswerId).ToHashSet();
+            var filteredAnswers = allCorrectAnswers
+                .Where(kvp => questionAnswerIds.Contains(kvp.Key))
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+            return filteredAnswers;
+        }
+
         // ==================== HOST CREATES GAME ====================
         /// <summary>
         /// Host tạo game session và nhận Game PIN
@@ -819,6 +842,225 @@ namespace BusinessLogic.Services
             _logger.LogWarning($"GetGamePinByConnectionAsync called for {connectionId}. Consider implementing connection tracking in Redis.");
             
             return null;
+        }
+
+        // ==================== BOSS FIGHT PER-PLAYER QUESTION FLOW ====================
+        
+        /// <summary>
+        /// Initialize shuffled question order for a player (called when game starts or player loops)
+        /// </summary>
+        private List<int> GenerateShuffledQuestionOrder(int questionCount)
+        {
+            var order = Enumerable.Range(0, questionCount).ToList();
+            var random = new Random();
+            for (int i = order.Count - 1; i > 0; i--)
+            {
+                int j = random.Next(i + 1);
+                (order[i], order[j]) = (order[j], order[i]);
+            }
+            return order;
+        }
+
+        /// <summary>
+        /// Get next question for a specific player (Boss Fight infinite loop mode)
+        /// Each player progresses independently with shuffled questions that loop infinitely
+        /// </summary>
+        public async Task<QuestionDto?> GetPlayerNextQuestionAsync(string gamePin, string connectionId)
+        {
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null || session.Status != GameStatus.InProgress)
+                return null;
+
+            var player = session.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
+            if (player == null)
+                return null;
+
+            var totalQuestions = session.Questions.Count;
+            if (totalQuestions == 0)
+                return null;
+
+            // Initialize shuffled order if not set
+            if (player.ShuffledQuestionOrder == null || player.ShuffledQuestionOrder.Count == 0)
+            {
+                player.ShuffledQuestionOrder = GenerateShuffledQuestionOrder(totalQuestions);
+                player.CurrentQuestionIndex = 0;
+                player.QuestionLoopCount = 0;
+                player.AnsweredQuestionIds = new HashSet<Guid>();
+            }
+
+            // Get current question index from shuffled order
+            var shuffledIndex = player.ShuffledQuestionOrder[player.CurrentQuestionIndex];
+            var question = session.Questions[shuffledIndex];
+
+            // Create question DTO for player
+            var questionDto = new QuestionDto
+            {
+                QuestionId = question.QuestionId,
+                QuestionText = question.QuestionText,
+                ImageUrl = question.ImageUrl,
+                AudioUrl = question.AudioUrl,
+                AnswerOptions = question.AnswerOptions,
+                QuestionNumber = player.CurrentQuestionIndex + 1 + (player.QuestionLoopCount * totalQuestions),
+                TotalQuestions = -1, // -1 indicates infinite (boss fight mode)
+                TimeLimit = question.TimeLimit ?? 30
+            };
+
+            await SaveGameSessionToRedisAsync(gamePin, session);
+
+            _logger.LogInformation($"📋 Player '{player.PlayerName}' getting question {player.CurrentQuestionIndex + 1} (loop {player.QuestionLoopCount + 1}), shuffled idx: {shuffledIndex}");
+
+            return questionDto;
+        }
+
+        /// <summary>
+        /// Move player to next question (called after player submits answer)
+        /// </summary>
+        public async Task<bool> MovePlayerToNextQuestionAsync(string gamePin, string connectionId, Guid answeredQuestionId)
+        {
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null || session.Status != GameStatus.InProgress)
+                return false;
+
+            var player = session.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
+            if (player == null)
+                return false;
+
+            // Mark question as answered in current loop
+            player.AnsweredQuestionIds ??= new HashSet<Guid>();
+            player.AnsweredQuestionIds.Add(answeredQuestionId);
+
+            // Move to next question
+            player.CurrentQuestionIndex++;
+
+            var totalQuestions = session.Questions.Count;
+
+            // If completed all questions in current loop, reshuffle and reset for next loop
+            if (player.CurrentQuestionIndex >= totalQuestions)
+            {
+                player.QuestionLoopCount++;
+                player.CurrentQuestionIndex = 0;
+                player.ShuffledQuestionOrder = GenerateShuffledQuestionOrder(totalQuestions);
+                player.AnsweredQuestionIds.Clear();
+                
+                _logger.LogInformation($"🔄 Player '{player.PlayerName}' completed loop {player.QuestionLoopCount}, reshuffling questions");
+            }
+
+            await SaveGameSessionToRedisAsync(gamePin, session);
+
+            return true;
+        }
+
+        /// <summary>
+        /// Submit answer for Boss Fight per-player mode with immediate feedback
+        /// Returns the answer result immediately for the player
+        /// </summary>
+        public async Task<PlayerAnswerResult?> SubmitBossFightAnswerAsync(string gamePin, string connectionId, Guid questionId, Guid answerId)
+        {
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null || session.Status != GameStatus.InProgress)
+                return null;
+
+            var player = session.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
+            if (player == null)
+                return null;
+
+            // Calculate time spent
+            var timeSpent = session.QuestionStartedAt.HasValue 
+                ? (DateTime.UtcNow - session.QuestionStartedAt.Value).TotalSeconds 
+                : 0;
+
+            // Check answer correctness
+            bool isCorrect = false;
+            string correctAnswerText = "";
+            var correctMap = await GetCorrectAnswersFromRedisAsync(gamePin);
+            if (correctMap != null)
+            {
+                isCorrect = correctMap.GetValueOrDefault(answerId, false);
+            }
+
+            // Find correct answer text
+            var question = session.Questions.FirstOrDefault(q => q.QuestionId == questionId);
+            if (question != null && correctMap != null)
+            {
+                var correctAnswerId = correctMap.FirstOrDefault(x => x.Value).Key;
+                var correctAnswer = question.AnswerOptions.FirstOrDefault(a => a.AnswerId == correctAnswerId);
+                correctAnswerText = correctAnswer?.OptionText ?? "";
+            }
+
+            // Calculate points (Kahoot style - faster = more points)
+            int points = 0;
+            if (isCorrect)
+            {
+                int maxTime = question?.TimeLimit ?? 30;
+                double timeRatio = Math.Max(0, 1.0 - (timeSpent / maxTime));
+                points = (int)(1000 + (timeRatio * 500)); // Max 1500 points
+            }
+
+            // Update player stats
+            player.Score += points;
+            if (isCorrect)
+            {
+                player.CorrectAnswers++;
+                player.TotalDamage += points; // In boss fight, points = damage
+            }
+
+            await SaveGameSessionToRedisAsync(gamePin, session);
+
+            _logger.LogInformation($"⚔️ Player '{player.PlayerName}' answered Q:{questionId}. Correct: {isCorrect}, Points: {points}");
+
+            return new PlayerAnswerResult
+            {
+                PlayerName = player.PlayerName,
+                IsCorrect = isCorrect,
+                PointsEarned = points,
+                TimeSpent = timeSpent
+            };
+        }
+
+        /// <summary>
+        /// Force end game (mod action) - ends the boss fight immediately
+        /// </summary>
+        public async Task<FinalResultDto?> ForceEndGameAsync(string gamePin, string reason = "Game ended by moderator")
+        {
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null)
+                return null;
+
+            session.Status = GameStatus.Completed;
+            session.BossDefeated = false; // Boss wins if force ended
+
+            var rankings = session.Players
+                .OrderByDescending(p => p.TotalDamage > 0 ? p.TotalDamage : p.Score)
+                .Select((p, index) => new PlayerScore
+                {
+                    PlayerName = p.PlayerName,
+                    TotalScore = p.TotalDamage > 0 ? p.TotalDamage : p.Score,
+                    CorrectAnswers = p.CorrectAnswers,
+                    Rank = index + 1
+                })
+                .ToList();
+
+            var winner = rankings.FirstOrDefault();
+
+            await SaveGameSessionToRedisAsync(gamePin, session);
+
+            _logger.LogInformation($"🛑 Game {gamePin} force ended. Reason: {reason}");
+
+            return new FinalResultDto
+            {
+                GamePin = gamePin,
+                FinalRankings = rankings,
+                Winner = winner,
+                CompletedAt = DateTime.UtcNow,
+                TotalQuestions = session.Questions.Count,
+                IsBossFightMode = session.IsBossFightMode,
+                BossDefeated = false,
+                BossMaxHP = session.BossMaxHP,
+                BossCurrentHP = session.BossCurrentHP,
+                TotalDamageDealt = session.TotalDamageDealt,
+                ForceEnded = true,
+                ForceEndReason = reason
+            };
         }
     }
 }
