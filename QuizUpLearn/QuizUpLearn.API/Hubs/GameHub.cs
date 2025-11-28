@@ -219,14 +219,23 @@ namespace QuizUpLearn.API.Hubs
                     return;
                 }
 
-                _logger.LogInformation($"Game {gamePin} started");
+                // Get session to check if Boss Fight mode
+                var session = await _gameService.GetGameSessionAsync(gamePin);
+
+                _logger.LogInformation($"Game {gamePin} started. Boss Fight Mode: {session?.IsBossFightMode}");
 
                 // Gửi tín hiệu "GameStarted" cho tất cả
                 await Clients.Group($"Game_{gamePin}").SendAsync("GameStarted", new
                 {
                     GamePin = gamePin,
                     TotalQuestions = question.TotalQuestions,
-                    Timestamp = DateTime.UtcNow
+                    Timestamp = DateTime.UtcNow,
+                    // Boss Fight mode info
+                    IsBossFightMode = session?.IsBossFightMode ?? false,
+                    BossMaxHP = session?.BossMaxHP ?? 0,
+                    BossCurrentHP = session?.BossCurrentHP ?? 0,
+                    GameTimeLimitSeconds = session?.GameTimeLimitSeconds,
+                    AutoNextQuestion = session?.AutoNextQuestion ?? false
                 });
 
                 // Đợi 3 giây (countdown) rồi gửi câu hỏi đầu tiên
@@ -331,6 +340,35 @@ namespace QuizUpLearn.API.Hubs
                             PlayerName = justAnswered.PlayerName,
                             Score = justAnswered.Score
                         });
+
+                        // ==================== BOSS FIGHT MODE ====================
+                        if (session.IsBossFightMode)
+                        {
+                            // Get the answer to check if it was correct
+                            var playerAnswer = session.CurrentAnswers.GetValueOrDefault(Context.ConnectionId);
+                            if (playerAnswer != null && playerAnswer.IsCorrect)
+                            {
+                                // Score = Damage in boss fight mode
+                                var damage = playerAnswer.PointsEarned;
+                                var bossDamageResult = await _gameService.DealDamageToBossAsync(gamePin, Context.ConnectionId, damage);
+                                
+                                if (bossDamageResult != null)
+                                {
+                                    // Broadcast boss damage to all players
+                                    await Clients.Group($"Game_{gamePin}").SendAsync("BossDamaged", bossDamageResult);
+
+                                    // Check if boss is defeated
+                                    if (bossDamageResult.BossCurrentHP <= 0)
+                                    {
+                                        var bossDefeatedResult = await _gameService.GetBossDefeatedResultAsync(gamePin);
+                                        if (bossDefeatedResult != null)
+                                        {
+                                            await Clients.Group($"Game_{gamePin}").SendAsync("BossDefeated", bossDefeatedResult);
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -469,6 +507,191 @@ namespace QuizUpLearn.API.Hubs
             catch (Exception ex)
             {
                 _logger.LogError(ex, $"Error in CancelGame for game {gamePin}");
+            }
+        }
+
+        // ==================== BOSS FIGHT MODE ====================
+        /// <summary>
+        /// Host enables Boss Fight mode for the game
+        /// </summary>
+        public async Task EnableBossFightMode(string gamePin, int bossHP = 10000, int? timeLimitSeconds = null, bool autoNextQuestion = true)
+        {
+            try
+            {
+                var session = await _gameService.GetGameSessionAsync(gamePin);
+                if (session == null)
+                {
+                    await Clients.Caller.SendAsync("Error", "Game not found");
+                    return;
+                }
+
+                // Only host can enable boss mode
+                if (!string.Equals(session.HostConnectionId, Context.ConnectionId, StringComparison.OrdinalIgnoreCase))
+                {
+                    await Clients.Caller.SendAsync("Error", "Only host can enable Boss Fight mode");
+                    return;
+                }
+
+                var success = await _gameService.EnableBossFightModeAsync(gamePin, bossHP, timeLimitSeconds, autoNextQuestion);
+                if (!success)
+                {
+                    await Clients.Caller.SendAsync("Error", "Failed to enable Boss Fight mode");
+                    return;
+                }
+
+                _logger.LogInformation($"🎮 Boss Fight mode enabled for game {gamePin}. Boss HP: {bossHP}");
+
+                // Broadcast to all players that Boss Fight mode is enabled
+                await Clients.Group($"Game_{gamePin}").SendAsync("BossFightModeEnabled", new
+                {
+                    GamePin = gamePin,
+                    BossMaxHP = bossHP,
+                    BossCurrentHP = bossHP,
+                    TimeLimitSeconds = timeLimitSeconds,
+                    AutoNextQuestion = autoNextQuestion,
+                    Message = "Boss Fight mode activated! Work together to defeat the boss!"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in EnableBossFightMode for game {gamePin}");
+                await Clients.Caller.SendAsync("Error", "An error occurred while enabling Boss Fight mode");
+            }
+        }
+
+        /// <summary>
+        /// Get current boss state (HP, damage dealt, etc.)
+        /// </summary>
+        public async Task GetBossState(string gamePin)
+        {
+            try
+            {
+                var bossState = await _gameService.GetBossStateAsync(gamePin);
+                if (bossState == null)
+                {
+                    await Clients.Caller.SendAsync("Error", "Game not found or Boss Fight mode not enabled");
+                    return;
+                }
+
+                await Clients.Caller.SendAsync("BossState", bossState);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in GetBossState for game {gamePin}");
+                await Clients.Caller.SendAsync("Error", "An error occurred while getting boss state");
+            }
+        }
+
+        /// <summary>
+        /// Auto move to next question for Boss Fight mode (continuous flow)
+        /// </summary>
+        public async Task BossFightNextQuestion(string gamePin)
+        {
+            try
+            {
+                var session = await _gameService.GetGameSessionAsync(gamePin);
+                if (session == null)
+                {
+                    await Clients.Caller.SendAsync("Error", "Game not found");
+                    return;
+                }
+
+                // Check if boss is already defeated
+                if (session.BossDefeated)
+                {
+                    var bossDefeatedResult = await _gameService.GetBossDefeatedResultAsync(gamePin);
+                    if (bossDefeatedResult != null)
+                    {
+                        await Clients.Group($"Game_{gamePin}").SendAsync("BossDefeated", bossDefeatedResult);
+                    }
+                    return;
+                }
+
+                // Check if time limit expired
+                if (await _gameService.IsBossFightTimeExpiredAsync(gamePin))
+                {
+                    // Boss wins - time ran out
+                    await Clients.Group($"Game_{gamePin}").SendAsync("BossFightTimeUp", new
+                    {
+                        GamePin = gamePin,
+                        Message = "Time's up! The boss has won!",
+                        BossCurrentHP = session.BossCurrentHP,
+                        BossMaxHP = session.BossMaxHP,
+                        TotalDamageDealt = session.TotalDamageDealt
+                    });
+                    return;
+                }
+
+                // Get next question (skip leaderboard in boss fight mode for faster pace)
+                var nextQuestion = await _gameService.NextQuestionAsync(gamePin);
+
+                if (nextQuestion == null)
+                {
+                    // Out of questions but boss not defeated
+                    // In boss fight mode, this means boss wins
+                    await Clients.Group($"Game_{gamePin}").SendAsync("BossFightQuestionsExhausted", new
+                    {
+                        GamePin = gamePin,
+                        Message = "All questions answered! But the boss survived...",
+                        BossCurrentHP = session.BossCurrentHP,
+                        BossMaxHP = session.BossMaxHP,
+                        TotalDamageDealt = session.TotalDamageDealt
+                    });
+                    return;
+                }
+
+                _logger.LogInformation($"🎮 Boss Fight - Game {gamePin} moved to next question");
+
+                // Send next question immediately (no leaderboard delay in boss fight)
+                await Clients.Group($"Game_{gamePin}").SendAsync("ShowQuestion", nextQuestion);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in BossFightNextQuestion for game {gamePin}");
+                await Clients.Caller.SendAsync("Error", "An error occurred while moving to next question");
+            }
+        }
+
+        /// <summary>
+        /// Get Boss Fight damage rankings (leaderboard by damage)
+        /// </summary>
+        public async Task GetBossFightLeaderboard(string gamePin)
+        {
+            try
+            {
+                var session = await _gameService.GetGameSessionAsync(gamePin);
+                if (session == null || !session.IsBossFightMode)
+                {
+                    await Clients.Caller.SendAsync("Error", "Game not found or Boss Fight mode not enabled");
+                    return;
+                }
+
+                var totalDamage = session.TotalDamageDealt;
+                var rankings = session.Players
+                    .OrderByDescending(p => p.TotalDamage)
+                    .Select((p, index) => new
+                    {
+                        PlayerName = p.PlayerName,
+                        TotalDamage = p.TotalDamage,
+                        CorrectAnswers = p.CorrectAnswers,
+                        Rank = index + 1,
+                        DamagePercent = totalDamage > 0 ? (double)p.TotalDamage / totalDamage * 100 : 0
+                    })
+                    .ToList();
+
+                await Clients.Group($"Game_{gamePin}").SendAsync("BossFightLeaderboard", new
+                {
+                    GamePin = gamePin,
+                    BossCurrentHP = session.BossCurrentHP,
+                    BossMaxHP = session.BossMaxHP,
+                    TotalDamageDealt = totalDamage,
+                    Rankings = rankings
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Error in GetBossFightLeaderboard for game {gamePin}");
+                await Clients.Caller.SendAsync("Error", "An error occurred while getting leaderboard");
             }
         }
     }

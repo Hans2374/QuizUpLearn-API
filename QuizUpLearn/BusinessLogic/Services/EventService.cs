@@ -332,6 +332,11 @@ namespace BusinessLogic.Services
             return true;
         }
 
+        public async Task<bool> IsUserJoinedAsync(Guid eventId, Guid userId)
+        {
+            return await _eventParticipantRepo.IsParticipantInEventAsync(eventId, userId);
+        }
+
         private async Task<EventResponseDto> MapToResponseDto(Event entity)
         {
             var currentParticipants = await _eventParticipantRepo.CountParticipantsByEventIdAsync(entity.Id);

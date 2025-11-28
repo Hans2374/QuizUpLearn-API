@@ -39,6 +39,10 @@ namespace BusinessLogic.DTOs
         public string PlayerName { get; set; } = string.Empty;
         public int Score { get; set; } = 0;
         public DateTime JoinedAt { get; set; }
+
+        // Boss Fight Mode stats
+        public int TotalDamage { get; set; } = 0; // Total damage dealt to boss
+        public int CorrectAnswers { get; set; } = 0; // Number of correct answers
     }
 
     /// <summary>
@@ -59,6 +63,53 @@ namespace BusinessLogic.DTOs
         public DateTime? QuestionStartedAt { get; set; }
         public Dictionary<string, PlayerAnswer> CurrentAnswers { get; set; } = new(); // ConnectionId -> Answer
         public DateTime CreatedAt { get; set; }
+
+        // ==================== BOSS FIGHT MODE ====================
+        public bool IsBossFightMode { get; set; } = false;
+        public int BossMaxHP { get; set; } = 10000; // Default boss HP
+        public int BossCurrentHP { get; set; } = 10000;
+        public int TotalDamageDealt { get; set; } = 0;
+        public bool BossDefeated { get; set; } = false;
+        public int? GameTimeLimitSeconds { get; set; } // Overall time limit for boss fight
+        public DateTime? GameStartedAt { get; set; } // When game actually started
+        public bool AutoNextQuestion { get; set; } = false; // Continuous question flow
+    }
+
+    /// <summary>
+    /// Event data khi boss nhận damage
+    /// </summary>
+    public class BossDamagedDto
+    {
+        public string PlayerName { get; set; } = string.Empty;
+        public int DamageDealt { get; set; }
+        public int BossCurrentHP { get; set; }
+        public int BossMaxHP { get; set; }
+        public int TotalDamageDealt { get; set; }
+        public double BossHPPercent => BossMaxHP > 0 ? (double)BossCurrentHP / BossMaxHP * 100 : 0;
+    }
+
+    /// <summary>
+    /// Event data khi boss bị đánh bại
+    /// </summary>
+    public class BossDefeatedDto
+    {
+        public string GamePin { get; set; } = string.Empty;
+        public int TotalDamageDealt { get; set; }
+        public List<PlayerDamageRanking> DamageRankings { get; set; } = new();
+        public PlayerDamageRanking? MvpPlayer { get; set; }
+        public double TimeToDefeat { get; set; } // seconds
+    }
+
+    /// <summary>
+    /// Player damage ranking for boss fight
+    /// </summary>
+    public class PlayerDamageRanking
+    {
+        public string PlayerName { get; set; } = string.Empty;
+        public int TotalDamage { get; set; }
+        public int CorrectAnswers { get; set; }
+        public int Rank { get; set; }
+        public double DamagePercent { get; set; }
     }
 
     // ==================== QUESTIONS ====================

@@ -368,6 +368,37 @@ namespace QuizUpLearn.API.Controllers
         }
 
         /// <summary>
+        /// Check if current user has joined the Event
+        /// </summary>
+        [HttpGet("{id:guid}/joined")]
+        public async Task<ActionResult<ApiResponse<object>>> IsJoined([FromRoute] Guid id)
+        {
+            try
+            {
+                var userId = await GetUserIdFromToken();
+                if (userId == Guid.Empty)
+                    return Unauthorized(new ApiResponse<object> { Success = false, Message = "User not authenticated" });
+
+                var isJoined = await _eventService.IsUserJoinedAsync(id, userId);
+                return Ok(new ApiResponse<object> 
+                { 
+                    Success = true, 
+                    Data = new { IsJoined = isJoined },
+                    Message = isJoined ? "User has joined this event" : "User has not joined this event"
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Check joined status for event {id} failed");
+                return StatusCode(500, new ApiResponse<object> 
+                { 
+                    Success = false, 
+                    Message = "An error occurred while checking joined status" 
+                });
+            }
+        }
+
+        /// <summary>
         /// Helper method để lấy UserId từ JWT token
         /// </summary>
         private async Task<Guid> GetUserIdFromToken()

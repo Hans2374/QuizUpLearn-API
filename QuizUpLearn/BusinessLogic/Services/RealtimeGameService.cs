@@ -303,6 +303,12 @@ namespace BusinessLogic.Services
             session.QuestionStartedAt = DateTime.UtcNow;
             session.CurrentAnswers.Clear();
 
+            // Boss Fight mode - track game start time
+            if (session.IsBossFightMode)
+            {
+                session.GameStartedAt = DateTime.UtcNow;
+            }
+
             var question = session.Questions[0];
 
             await SaveGameSessionToRedisAsync(gamePin, session);
@@ -397,6 +403,12 @@ namespace BusinessLogic.Services
 
             // Cập nhật điểm của player
             player.Score += points;
+
+            // Boss Fight mode - track correct answers
+            if (isCorrect)
+            {
+                player.CorrectAnswers++;
+            }
 
             await SaveGameSessionToRedisAsync(gamePin, session);
 
@@ -640,6 +652,144 @@ namespace BusinessLogic.Services
             await DeleteGameFromRedisAsync(gamePin);
 
             _logger.LogInformation($"✅ Game {gamePin} cleaned up from Redis");
+        }
+
+        // ==================== BOSS FIGHT MODE ====================
+        /// <summary>
+        /// Bật Boss Fight mode cho game session
+        /// </summary>
+        public async Task<bool> EnableBossFightModeAsync(string gamePin, int bossHP = 10000, int? timeLimitSeconds = null, bool autoNextQuestion = true)
+        {
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null)
+                return false;
+
+            if (session.Status != GameStatus.Lobby)
+                return false;
+
+            session.IsBossFightMode = true;
+            session.BossMaxHP = bossHP;
+            session.BossCurrentHP = bossHP;
+            session.TotalDamageDealt = 0;
+            session.BossDefeated = false;
+            session.GameTimeLimitSeconds = timeLimitSeconds;
+            session.AutoNextQuestion = autoNextQuestion;
+
+            await SaveGameSessionToRedisAsync(gamePin, session);
+            
+            _logger.LogInformation($"🎮 Boss Fight mode enabled for game {gamePin}. Boss HP: {bossHP}");
+            return true;
+        }
+
+        /// <summary>
+        /// Xử lý damage khi player trả lời đúng trong Boss Fight mode
+        /// </summary>
+        public async Task<BossDamagedDto?> DealDamageToBossAsync(string gamePin, string connectionId, int damage)
+        {
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null || !session.IsBossFightMode)
+                return null;
+
+            var player = session.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
+            if (player == null)
+                return null;
+
+            // Update boss HP
+            session.BossCurrentHP = Math.Max(0, session.BossCurrentHP - damage);
+            session.TotalDamageDealt += damage;
+
+            // Update player damage
+            player.TotalDamage += damage;
+
+            // Check if boss is defeated
+            if (session.BossCurrentHP <= 0)
+            {
+                session.BossDefeated = true;
+            }
+
+            await SaveGameSessionToRedisAsync(gamePin, session);
+
+            _logger.LogInformation($"⚔️ Boss damaged by {player.PlayerName}: -{damage} HP. Boss HP: {session.BossCurrentHP}/{session.BossMaxHP}");
+
+            return new BossDamagedDto
+            {
+                PlayerName = player.PlayerName,
+                DamageDealt = damage,
+                BossCurrentHP = session.BossCurrentHP,
+                BossMaxHP = session.BossMaxHP,
+                TotalDamageDealt = session.TotalDamageDealt
+            };
+        }
+
+        /// <summary>
+        /// Lấy kết quả Boss Fight khi boss bị đánh bại
+        /// </summary>
+        public async Task<BossDefeatedDto?> GetBossDefeatedResultAsync(string gamePin)
+        {
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null || !session.IsBossFightMode)
+                return null;
+
+            var totalDamage = session.TotalDamageDealt;
+            var rankings = session.Players
+                .OrderByDescending(p => p.TotalDamage)
+                .Select((p, index) => new PlayerDamageRanking
+                {
+                    PlayerName = p.PlayerName,
+                    TotalDamage = p.TotalDamage,
+                    CorrectAnswers = p.CorrectAnswers,
+                    Rank = index + 1,
+                    DamagePercent = totalDamage > 0 ? (double)p.TotalDamage / totalDamage * 100 : 0
+                })
+                .ToList();
+
+            var timeToDefeat = session.GameStartedAt.HasValue 
+                ? (DateTime.UtcNow - session.GameStartedAt.Value).TotalSeconds 
+                : 0;
+
+            return new BossDefeatedDto
+            {
+                GamePin = gamePin,
+                TotalDamageDealt = totalDamage,
+                DamageRankings = rankings,
+                MvpPlayer = rankings.FirstOrDefault(),
+                TimeToDefeat = timeToDefeat
+            };
+        }
+
+        /// <summary>
+        /// Kiểm tra xem Boss Fight đã hết giờ chưa
+        /// </summary>
+        public async Task<bool> IsBossFightTimeExpiredAsync(string gamePin)
+        {
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null || !session.IsBossFightMode)
+                return false;
+
+            if (!session.GameTimeLimitSeconds.HasValue || !session.GameStartedAt.HasValue)
+                return false;
+
+            var elapsed = (DateTime.UtcNow - session.GameStartedAt.Value).TotalSeconds;
+            return elapsed >= session.GameTimeLimitSeconds.Value;
+        }
+
+        /// <summary>
+        /// Get current boss state
+        /// </summary>
+        public async Task<BossDamagedDto?> GetBossStateAsync(string gamePin)
+        {
+            var session = await GetGameSessionFromRedisAsync(gamePin);
+            if (session == null || !session.IsBossFightMode)
+                return null;
+
+            return new BossDamagedDto
+            {
+                PlayerName = "",
+                DamageDealt = 0,
+                BossCurrentHP = session.BossCurrentHP,
+                BossMaxHP = session.BossMaxHP,
+                TotalDamageDealt = session.TotalDamageDealt
+            };
         }
 
         // ==================== CONNECTION MANAGEMENT ====================
