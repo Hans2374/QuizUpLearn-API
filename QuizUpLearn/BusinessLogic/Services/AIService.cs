@@ -979,13 +979,13 @@ namespace BusinessLogic.Services
                     continue;
                 }
 
-                var newUserWeakPoint = await _userWeakPointService.AddAsync(new RequestUserWeakPointDto
-                {
-                    UserId = userId,
-                    WeakPoint = $"Weakpoint in {quiz.TOEICPart} at point range {quizSet.DifficultyLevel}: " + analysisResult.WeakPoint,
-                    Advice = $"Advice in {quiz.TOEICPart} at point range {quizSet.DifficultyLevel}: " + analysisResult.Advice,
-                    IsDone = false
-                });
+                // var newUserWeakPoint = await _userWeakPointService.AddAsync(new RequestUserWeakPointDto
+                // {
+                //     UserId = userId,
+                //     WeakPoint = $"Weakpoint in {quiz.TOEICPart} at point range {quizSet.DifficultyLevel}: " + analysisResult.WeakPoint,
+                //     Advice = $"Advice in {quiz.TOEICPart} at point range {quizSet.DifficultyLevel}: " + analysisResult.Advice,
+                //     IsDone = false
+                // });
             }
 
             return await _userWeakPointService.GetByUserIdAsync(userId, null!);
