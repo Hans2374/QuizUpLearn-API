@@ -28,6 +28,15 @@ namespace Repository.Repositories
                 .FirstOrDefaultAsync(q => q.Id == id && q.DeletedAt == null);
         }
 
+        public async Task<IEnumerable<Quiz>> GetQuizzesByIdsAsync(IEnumerable<Guid> ids)
+        {
+            var idsList = ids.ToList();
+            return await _context.Quizzes
+                .Include(q => q.AnswerOptions)
+                .Where(q => idsList.Contains(q.Id) && q.DeletedAt == null)
+                .ToListAsync();
+        }
+
         public async Task<IEnumerable<Quiz>> GetAllQuizzesAsync()
         {
             return await _context.Quizzes

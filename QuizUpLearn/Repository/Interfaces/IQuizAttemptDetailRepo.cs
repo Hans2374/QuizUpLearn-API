@@ -5,6 +5,7 @@ namespace Repository.Interfaces
     public interface IQuizAttemptDetailRepo
     {
         Task<QuizAttemptDetail> CreateAsync(QuizAttemptDetail quizAttemptDetail);
+        Task<int> CreateBatchAsync(IEnumerable<QuizAttemptDetail> quizAttemptDetails);
         Task<QuizAttemptDetail?> GetByIdAsync(Guid id);
         Task<IEnumerable<QuizAttemptDetail>> GetAllAsync(bool includeDeleted = false);
         Task<IEnumerable<QuizAttemptDetail>> GetByAttemptIdAsync(Guid attemptId, bool includeDeleted = false);
