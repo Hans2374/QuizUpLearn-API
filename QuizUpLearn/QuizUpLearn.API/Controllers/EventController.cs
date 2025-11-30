@@ -332,6 +332,43 @@ namespace QuizUpLearn.API.Controllers
         }
 
         /// <summary>
+        /// 🏆 Lấy Leaderboard của Event - Bảng xếp hạng participants
+        /// </summary>
+        [HttpGet("{id:guid}/leaderboard")]
+        [AllowAnonymous]
+        public async Task<ActionResult<ApiResponse<EventLeaderboardResponseDto>>> GetEventLeaderboard([FromRoute] Guid id)
+        {
+            try
+            {
+                var result = await _eventService.GetEventLeaderboardAsync(id);
+                return Ok(new ApiResponse<EventLeaderboardResponseDto> 
+                { 
+                    Success = true, 
+                    Data = result,
+                    Message = "Leaderboard retrieved successfully" 
+                });
+            }
+            catch (ArgumentException ex)
+            {
+                _logger.LogWarning(ex, $"Get leaderboard for event {id} validation failed");
+                return NotFound(new ApiResponse<EventLeaderboardResponseDto> 
+                { 
+                    Success = false, 
+                    Message = ex.Message 
+                });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"Get leaderboard for event {id} failed");
+                return StatusCode(500, new ApiResponse<EventLeaderboardResponseDto> 
+                { 
+                    Success = false, 
+                    Message = "An error occurred while retrieving leaderboard" 
+                });
+            }
+        }
+
+        /// <summary>
         /// Join Event (đăng ký tham gia)
         /// </summary>
         [HttpPost("{id:guid}/join")]

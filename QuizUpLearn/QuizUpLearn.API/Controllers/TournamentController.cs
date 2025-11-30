@@ -233,6 +233,22 @@ namespace QuizUpLearn.API.Controllers
 			}
 		}
 
+		[HttpGet("{id:guid}/leaderboard")]
+		[AllowAnonymous]
+		public async Task<ActionResult<ApiResponse<IEnumerable<TournamentLeaderboardItemDto>>>> GetLeaderboard([FromRoute] Guid id)
+		{
+			try
+			{
+				var res = await _tournamentService.GetLeaderboardAsync(id);
+				return Ok(new ApiResponse<IEnumerable<TournamentLeaderboardItemDto>> { Success = true, Data = res, Message = "OK" });
+			}
+			catch (Exception ex)
+			{
+				_logger.LogError(ex, "Get leaderboard failed");
+				return BadRequest(new ApiResponse<IEnumerable<TournamentLeaderboardItemDto>> { Success = false, Message = ex.Message });
+			}
+		}
+
 		[HttpDelete("{id:guid}")]
 		public async Task<ActionResult<ApiResponse<object>>> Delete([FromRoute] Guid id)
 		{

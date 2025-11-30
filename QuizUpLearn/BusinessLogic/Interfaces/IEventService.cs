@@ -14,6 +14,7 @@ namespace BusinessLogic.Interfaces
         Task<bool> DeleteEventAsync(Guid id);
         Task<StartEventResponseDto> StartEventAsync(Guid userId, StartEventRequestDto dto);
         Task<IEnumerable<EventParticipantResponseDto>> GetEventParticipantsAsync(Guid eventId);
+        Task<EventLeaderboardResponseDto> GetEventLeaderboardAsync(Guid eventId);
         Task<bool> JoinEventAsync(Guid eventId, Guid userId);
         Task<bool> IsUserJoinedAsync(Guid eventId, Guid userId);
     }
