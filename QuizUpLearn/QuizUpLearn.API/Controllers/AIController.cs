@@ -1,6 +1,5 @@
 ﻿using BusinessLogic.DTOs.AiDtos;
 using BusinessLogic.DTOs.QuizSetDtos;
-using BusinessLogic.Helpers;
 using BusinessLogic.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -56,7 +55,7 @@ namespace QuizUpLearn.API.Controllers
         /// <returns></returns>
         [HttpPost("generate-quiz-set")]
         [SubscriptionAndRoleAuthorize("Moderator", "User", RequireAiFeatures = true, CheckRemainingUsage = true)]
-        public async Task<IActionResult> GeneratePracticeQuizSet([FromBody] AiGenerateQuizSetRequestDto inputData, QuizPartEnums quizPart, QuizSetTypeEnum quizSetType)
+        public async Task<IActionResult> GeneratePracticeQuizSet([FromBody] AiGenerateQuizSetRequestDto inputData, QuizPartEnum quizPart, QuizSetTypeEnum quizSetType)
         {
             if (inputData == null)
             {
@@ -121,28 +120,27 @@ namespace QuizUpLearn.API.Controllers
                         QuizSetId = quizSetId
                     });
 
-                    //generate quiz set
                     switch (quizPart)
                     {
-                        case QuizPartEnums.PART1:
+                        case QuizPartEnum.PART1:
                             result = await aiService.GeneratePracticeQuizSetPart1Async(inputData, quizSetId);
                             break;
-                        case QuizPartEnums.PART2:
+                        case QuizPartEnum.PART2:
                             result = await aiService.GeneratePracticeQuizSetPart2Async(inputData, quizSetId);
                             break;
-                        case QuizPartEnums.PART3:
+                        case QuizPartEnum.PART3:
                             result = await aiService.GeneratePracticeQuizSetPart3Async(inputData, quizSetId);
                             break;
-                        case QuizPartEnums.PART4:
+                        case QuizPartEnum.PART4:
                             result = await aiService.GeneratePracticeQuizSetPart4Async(inputData, quizSetId);
                             break;
-                        case QuizPartEnums.PART5:
+                        case QuizPartEnum.PART5:
                             result = await aiService.GeneratePracticeQuizSetPart5Async(inputData, quizSetId);
                             break;
-                        case QuizPartEnums.PART6:
+                        case QuizPartEnum.PART6:
                             result = await aiService.GeneratePracticeQuizSetPart6Async(inputData, quizSetId);
                             break;
-                        case QuizPartEnums.PART7:
+                        case QuizPartEnum.PART7:
                             result = await aiService.GeneratePracticeQuizSetPart7Async(inputData, quizSetId);
                             break;
                     }

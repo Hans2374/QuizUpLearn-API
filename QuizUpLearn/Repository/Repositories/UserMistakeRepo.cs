@@ -75,6 +75,7 @@ namespace Repository.Repositories
         {
             return await _context.UserMistakes
                 .Where(um => um.UserId == userId)
+                .Include(um => um.Quiz)
                 .ToListAsync();
         }
     }

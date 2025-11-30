@@ -1,4 +1,5 @@
-﻿using BusinessLogic.DTOs;
+﻿using AutoMapper;
+using BusinessLogic.DTOs;
 using BusinessLogic.DTOs.AiDtos;
 using BusinessLogic.DTOs.QuizDtos;
 using BusinessLogic.DTOs.QuizGroupItemDtos;
@@ -9,6 +10,7 @@ using BusinessLogic.Helpers;
 using BusinessLogic.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Repository.Enums;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -27,6 +29,7 @@ namespace BusinessLogic.Services
         private readonly IQuizGroupItemService _quizGroupItemService;
         private readonly IUserMistakeService _userMistakeService;
         private readonly IUserWeakPointService _userWeakPointService;
+        private readonly IMapper _mapper;
         //API keys
         private readonly string _geminiApiKey;
         private readonly string _openRouterApiKey;
@@ -38,7 +41,7 @@ namespace BusinessLogic.Services
         private readonly string _narratorVoiceId;
         //Helpers
         private readonly PromptGenerateQuizSetHelper _promptGenerator;
-        public AIService(HttpClient httpClient, IConfiguration configuration, IQuizSetService quizSetService, IQuizService quizService, IAnswerOptionService answerOptionService, IUploadService uploadService, ILogger<AIService> logger, IQuizGroupItemService quizGroupItemService, IUserMistakeService userMistakeService, IUserWeakPointService userWeakPointService)
+        public AIService(HttpClient httpClient, IConfiguration configuration, IQuizSetService quizSetService, IQuizService quizService, IAnswerOptionService answerOptionService, IUploadService uploadService, ILogger<AIService> logger, IQuizGroupItemService quizGroupItemService, IUserMistakeService userMistakeService, IUserWeakPointService userWeakPointService, IMapper mapper)
         {
             _httpClient = httpClient;
             _quizSetService = quizSetService;
@@ -62,6 +65,7 @@ namespace BusinessLogic.Services
             _narratorVoiceId = configuration["AsyncTTS:Voices:Narrator"] ?? throw new ArgumentNullException("Narrator voice id is not configured");
 
             _promptGenerator = new PromptGenerateQuizSetHelper();
+            _mapper = mapper;
         }
 
         private async Task<string> GeminiGenerateContentAsync(string prompt)
@@ -381,7 +385,7 @@ namespace BusinessLogic.Services
                 var groupItem = await _quizGroupItemService.CreateAsync(new RequestQuizGroupItemDto
                 {
                     QuizSetId = quizSetId,
-                    Name = $"Single quiz {QuizPartEnums.PART1.ToString()}",
+                    Name = $"Single quiz {QuizPartEnum.PART1.ToString()}",
                     AudioUrl = audioResult.Url,
                     AudioScript = audioScript,
                     ImageDescription = quiz.ImageDescription,
@@ -399,7 +403,7 @@ namespace BusinessLogic.Services
                 {
                     QuizSetId = quizSetId,
                     QuestionText = quiz.QuestionText,
-                    TOEICPart = QuizPartEnums.PART1.ToString(),
+                    TOEICPart = QuizPartEnum.PART1.ToString(),
                     AudioURL = audioResult.Url,
                     ImageURL = imageResult.Url,
                     QuizGroupItemId = groupItem.Id
@@ -458,7 +462,7 @@ namespace BusinessLogic.Services
                 var groupItem = await _quizGroupItemService.CreateAsync(new RequestQuizGroupItemDto
                 {
                     QuizSetId = quizSetId,
-                    Name = $"Single quiz {QuizPartEnums.PART2.ToString()}",
+                    Name = $"Single quiz {QuizPartEnum.PART2.ToString()}",
                     AudioUrl = audioResult.Url,
                     AudioScript = audioScript
                 });
@@ -473,7 +477,7 @@ namespace BusinessLogic.Services
                 {
                     QuizSetId = quizSetId,
                     QuestionText = "",
-                    TOEICPart = QuizPartEnums.PART2.ToString(),
+                    TOEICPart = QuizPartEnum.PART2.ToString(),
                     AudioURL = audioResult.Url,
                     QuizGroupItemId = groupItem.Id
                 });
@@ -565,7 +569,7 @@ namespace BusinessLogic.Services
                     {
                         QuizSetId = quizSetId,
                         QuestionText = quiz.QuestionText,
-                        TOEICPart = QuizPartEnums.PART3.ToString(),
+                        TOEICPart = QuizPartEnum.PART3.ToString(),
                         QuizGroupItemId = groupItem.Id
                     });
 
@@ -657,7 +661,7 @@ namespace BusinessLogic.Services
                     {
                         QuizSetId = quizSetId,
                         QuestionText = quiz.QuestionText,
-                        TOEICPart = QuizPartEnums.PART4.ToString(),
+                        TOEICPart = QuizPartEnum.PART4.ToString(),
                         QuizGroupItemId = groupItem.Id
                     });
 
@@ -705,7 +709,7 @@ namespace BusinessLogic.Services
                 {
                     QuizSetId = quizSetId,
                     QuestionText = quiz.QuestionText,
-                    TOEICPart = QuizPartEnums.PART5.ToString(),
+                    TOEICPart = QuizPartEnum.PART5.ToString(),
                     CorrectAnswer = quiz.AnswerOptions.FirstOrDefault(o => o.IsCorrect)!.OptionLabel,
                 });
 
@@ -790,7 +794,7 @@ namespace BusinessLogic.Services
                     {
                         QuizSetId = quizSetId,
                         QuestionText = j.ToString(),
-                        TOEICPart = QuizPartEnums.PART6.ToString(),
+                        TOEICPart = QuizPartEnum.PART6.ToString(),
                         QuizGroupItemId = groupItem.Id
                     });
                     //Create answer options
@@ -889,7 +893,7 @@ namespace BusinessLogic.Services
                     {
                         QuizSetId = quizSetId,
                         QuestionText = quiz.QuestionText,
-                        TOEICPart = QuizPartEnums.PART7.ToString(),
+                        TOEICPart = QuizPartEnum.PART7.ToString(),
                         QuizGroupItemId = groupItem.Id
                     });
 
@@ -908,46 +912,47 @@ namespace BusinessLogic.Services
 
             return true;
         }
-
+        //Create user weak points based on user mistakes and give advice
         public async Task<PaginationResponseDto<ResponseUserWeakPointDto>> AnalyzeUserMistakesAndAdviseAsync(Guid userId)
         {
-            var userMistakes = await _userMistakeService.GetAllByUserIdAsync(userId, new PaginationRequestDto
-            {
-                Page = 1,
-                PageSize = 100
-            });
-            var existingWeakPoints = string.Empty;
-            var existingAdvices = string.Empty;
+            var userMistakePage = await _userMistakeService.GetAllByUserIdAsync(userId, null!);
 
-            foreach (var mistake in userMistakes.Data)
+            var userMistakes = userMistakePage.Data.Where(um => !um.IsAnalyzed).ToList();
+
+            bool samePartMistakeExists = false;
+
+            foreach (var mistake in userMistakes)
             {
-                if (mistake.IsAnalyzed) continue;
-                //Trace back to quiz and quiz set
                 var quiz = await _quizService.GetQuizByIdAsync(mistake.QuizId);
                 if (quiz == null) continue;
+
                 var quizSet = await _quizSetService.GetQuizSetByIdAsync(quiz.QuizSetId);
                 if (quizSet == null) continue;
+
                 var answers = await _answerOptionService.GetByQuizIdAsync(quiz.Id);
                 if( answers == null || answers.Count() == 0) continue;
 
-                string answersText = string.Empty;
-                answersText = string.Join("\n", answers.Select(a => $"{a.OptionLabel}. {a.OptionText} (Correct: {a.IsCorrect})"));
-
                 var userWeakPoints = await _userWeakPointService.GetByUserIdAsync(userId, null!);
-
+                // each user should only have 1 weak point per part + difficulty level
                 foreach (var wp in userWeakPoints.Data)
                 {
-                    if (userWeakPoints == null || userWeakPoints.Data.Count() == 0) continue;
-                    existingWeakPoints += wp.WeakPoint + "\n";
-
-                    if (!string.IsNullOrEmpty(wp.Advice))
-                        existingAdvices += wp.Advice + "\n";
+                    if(wp.ToeicPart == quiz.TOEICPart
+                        && wp.DifficultyLevel == quizSet.DifficultyLevel
+                        && !wp.IsDone)
+                    {
+                        samePartMistakeExists = true;
+                        break;
+                    }
                 }
+                if (samePartMistakeExists) continue;
 
                 await _userMistakeService.UpdateAsync(mistake.Id, new RequestUserMistakeDto
                 {
                     IsAnalyzed = true
                 });
+
+                string answersText = string.Empty;
+                answersText = string.Join("\n", answers.Select(a => $"{a.OptionLabel}. {a.OptionText} (Correct: {a.IsCorrect})"));
 
                 var prompt = _promptGenerator.GetAnalyzeMistakePrompt(quizSet, quiz, answersText, mistake);
                 var response = await GeminiGenerateContentAsync(prompt);
@@ -969,13 +974,13 @@ namespace BusinessLogic.Services
                     || string.IsNullOrEmpty(analysisResult.WeakPoint)
                     || string.IsNullOrEmpty(analysisResult.Advice))
                 {
-                    Console.WriteLine($"Weak point can't be null");
+                    Console.WriteLine($"Weak point can't be null, generate failed.");
                     continue;
                 }
 
                 if (await _userWeakPointService.IsWeakPointExistedAsync(analysisResult.WeakPoint))
                 {
-                    Console.WriteLine($"Weak point is existed");
+                    Console.WriteLine($"Weak point is existed.");
                     continue;
                 }
 
@@ -993,21 +998,95 @@ namespace BusinessLogic.Services
             return await _userWeakPointService.GetByUserIdAsync(userId, null!);
         }
 
-        public async Task<QuizSetResponseDto> GenerateFixWeakPointQuizSetAsync(Guid userId)
+        public async Task<PaginationResponseDto<QuizSetResponseDto>> GenerateFixWeakPointQuizSetAsync(Guid userId)
         {
-            /*//Get all user weak points that are not done yet
+            //Get all user weak points that are not done yet
             var userWeakPoints = await _userWeakPointService.GetByUserIdAsync(userId, null!);
-            string[] parts = [];
-            Dictionary<string, ResponseUserWeakPointDto> weakPointsInTheSamePart = new();//Key: Part, Value: WeakPoint
+            List<QuizSetResponseDto> createdQuizSets = new List<QuizSetResponseDto>();
             foreach (var wp in userWeakPoints.Data)
             {
-                if(wp.IsDone) continue;
-                //Take all the weak points that have the same Part
-                weakPointsInTheSamePart.Add(wp.ToeicPart, wp);
-
-                if (!parts.Contains(wp.ToeicPart))
+                if (wp.IsDone) continue;
+                //Each weak point will have 5 questions to practice
+                var newQuizSet = await _quizSetService.CreateQuizSetAsync(new QuizSetRequestDto
                 {
-                    parts = parts.Append(wp.ToeicPart).ToArray();
+                    Title = $"Practice for weak point: {wp.WeakPoint}",
+                    Description = $"This quiz set is created to help you improve your weak point: {wp.WeakPoint}. Advice: {wp.Advice}",
+                    CreatedBy = userId,
+                    DifficultyLevel = wp.DifficultyLevel,
+                    IsAIGenerated = true,
+                    IsPremiumOnly = false,
+                    IsPublished = false,
+                    QuizSetType = QuizSetTypeEnum.FixWeakPoint
+                });
+
+                switch(wp.ToeicPart)
+                {
+                    case "PART1":
+                        await GeneratePracticeQuizSetPart1Async(new AiGenerateQuizSetRequestDto
+                        {
+                            CreatorId = userId,
+                            QuestionQuantity = 5,
+                            Difficulty = wp.DifficultyLevel,
+                            Topic = "Help me fix this weak point: " + wp.WeakPoint
+                        }, newQuizSet.Id);
+                        break;
+                    case "PART2":
+                        await GeneratePracticeQuizSetPart2Async(new AiGenerateQuizSetRequestDto
+                        {
+                            CreatorId = userId,
+                            QuestionQuantity = 5,
+                            Difficulty = wp.DifficultyLevel,
+                            Topic = wp.WeakPoint
+                        }, newQuizSet.Id);
+                        break;
+                    case "PART3":
+                        await GeneratePracticeQuizSetPart3Async(new AiGenerateQuizSetRequestDto
+                        {
+                            CreatorId = userId,
+                            QuestionQuantity = 5,
+                            Difficulty = wp.DifficultyLevel,
+                            Topic = wp.WeakPoint
+                        }, newQuizSet.Id);
+                        break;
+                    case "PART4":
+                        await GeneratePracticeQuizSetPart4Async(new AiGenerateQuizSetRequestDto
+                        {
+                            CreatorId = userId,
+                            QuestionQuantity = 5,
+                            Difficulty = wp.DifficultyLevel,
+                            Topic = wp.WeakPoint
+                        }, newQuizSet.Id);
+                        break;
+                    case "PART5":
+                        await GeneratePracticeQuizSetPart5Async(new AiGenerateQuizSetRequestDto
+                        {
+                            CreatorId = userId,
+                            QuestionQuantity = 5,
+                            Difficulty = wp.DifficultyLevel,
+                            Topic = wp.WeakPoint
+                        }, newQuizSet.Id);
+                        break;
+                    case "PART6":
+                        await GeneratePracticeQuizSetPart6Async(new AiGenerateQuizSetRequestDto
+                        {
+                            CreatorId = userId,
+                            QuestionQuantity = 5,
+                            Difficulty = wp.DifficultyLevel,
+                            Topic = wp.WeakPoint
+                        }, newQuizSet.Id);
+                        break;
+                    case "PART7":
+                        await GeneratePracticeQuizSetPart7Async(new AiGenerateQuizSetRequestDto
+                        {
+                            CreatorId = userId,
+                            QuestionQuantity = 5,
+                            Difficulty = wp.DifficultyLevel,
+                            Topic = wp.WeakPoint
+                        }, newQuizSet.Id);
+                        break;
+                    default:
+                        Console.WriteLine($"Unsupported TOEIC part: {wp.ToeicPart}");
+                        break;
                 }
 
                 await _userWeakPointService.UpdateAsync(wp.Id, new RequestUserWeakPointDto
@@ -1021,17 +1100,10 @@ namespace BusinessLogic.Services
                     CompleteAt = DateTime.UtcNow
                 });
 
+                createdQuizSets.Add(newQuizSet);
             }
 
-            //Take each weak points in the same part to generate a quiz set about 10 quizzes
-            foreach(var part in parts)
-            {
-                foreach(var wp in weakPointsInTheSamePart)
-                {
-                    //Generate quiz here
-                }
-            }*/
-            throw new Exception("Not implemented yet.");
+            return _mapper.Map<PaginationResponseDto<QuizSetResponseDto>>(createdQuizSets);
         }
     }
 }

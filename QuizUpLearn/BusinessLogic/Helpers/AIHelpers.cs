@@ -3,7 +3,6 @@ using BusinessLogic.DTOs.AiDtos;
 using BusinessLogic.DTOs.QuizDtos;
 using BusinessLogic.DTOs.QuizSetDtos;
 using BusinessLogic.DTOs.UserMistakeDtos;
-using Repository.Entities;
 
 namespace BusinessLogic.Helpers
 {
@@ -341,6 +340,10 @@ Return in JSON:
   ""Advice"": ""...""
 }}
 ";
+        }
+        public string GetFixWeakPointPrompt()
+        {
+            return $@"";
         }
     }
 }
