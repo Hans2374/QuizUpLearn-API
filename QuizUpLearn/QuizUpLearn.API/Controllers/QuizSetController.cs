@@ -71,13 +71,16 @@ namespace QuizUpLearn.API.Controllers
         /// <param name="creatorId">Creator ID</param>
         /// <param name="request">Pagination and filter parameters</param>
         /// <returns>List of quiz sets by creator</returns>
-        [HttpPost("creator/{creatorId}/search")]
+        [HttpPost("creator/search")]
+        [SubscriptionAndRoleAuthorize]
         [Authorize]
         public async Task<ActionResult<PaginationResponseDto<QuizSetResponseDto>>> GetQuizSetsByCreator(
-            Guid creatorId,
+            Guid? creatorId,
             [FromBody] PaginationRequestDto request)
         {
-            var quizSets = await _quizSetService.GetQuizSetsByCreatorAsync(creatorId, request);
+            var userId = (Guid)HttpContext.Items["UserId"]!;
+
+            var quizSets = await _quizSetService.GetQuizSetsByCreatorAsync(creatorId ?? userId, request);
             return Ok(quizSets);
         }
 

@@ -79,5 +79,14 @@ namespace QuizUpLearn.API.Controllers
             await _userMistakeService.DeleteAsync(id);
             return NoContent();
         }
+        [HttpGet("mistake-quizzes/user")]
+        [SubscriptionAndRoleAuthorize(RequirePremiumContent = true)]
+        public async Task<IActionResult> GetMistakeQuizzes(PaginationRequestDto paginationDto)
+        {
+            var userId = (Guid)HttpContext.Items["UserId"]!;
+
+            var mistakeQuizzes = await _userMistakeService.GetMistakeQuizzesByUserId(userId, paginationDto);
+            return Ok(mistakeQuizzes);
+        }
     }
 }

@@ -5,6 +5,7 @@ using Repository.Entities;
 using Repository.Interfaces;
 using BusinessLogic.Extensions;
 using BusinessLogic.DTOs;
+using BusinessLogic.DTOs.QuizDtos;
 
 namespace BusinessLogic.Services
 {
@@ -54,6 +55,19 @@ namespace BusinessLogic.Services
             pagination ??= new PaginationRequestDto();
             var userMistakes = await _repo.GetAlByUserIdAsync(userId);
             var dtos = _mapper.Map<IEnumerable<ResponseUserMistakeDto>>(userMistakes);
+            return dtos.ToPagedResponse(pagination);
+        }
+
+        public async Task<PaginationResponseDto<QuizResponseDto>> GetMistakeQuizzesByUserId(Guid userId, PaginationRequestDto pagination)
+        {
+            var userMistakes = await _repo.GetAlByUserIdAsync(userId);
+            var quizzes = userMistakes
+                .Where(um => um.Quiz != null)
+                .Select(um => um.Quiz)
+                .Distinct()
+                .ToList();
+
+            var dtos = _mapper.Map<IEnumerable<QuizResponseDto>>(quizzes);
             return dtos.ToPagedResponse(pagination);
         }
     }

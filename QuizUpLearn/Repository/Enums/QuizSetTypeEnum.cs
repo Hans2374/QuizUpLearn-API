@@ -5,6 +5,7 @@
         Practice,
         Placement,
         Tournament,
-        Event
+        Event,
+        FixWeakPoint
     }
 }
