@@ -15,6 +15,7 @@ namespace Repository.Interfaces
             bool? isPremiumOnly = null,
             bool? isPublished = null,
             bool? isAiGenerated = null,
+            bool? isRequireValidate = null,
             QuizSetTypeEnum? quizSetType = null);
         Task<IEnumerable<QuizSet>> GetQuizSetsByCreatorAsync(
             Guid creatorId, 
@@ -25,6 +26,7 @@ namespace Repository.Interfaces
             bool? isPremiumOnly = null,
             bool? isPublished = null,
             bool? isAiGenerated = null,
+            bool? isRequireValidate = null,
             QuizSetTypeEnum? quizSetType = null);
         Task<IEnumerable<QuizSet>> GetPublishedQuizSetsAsync(
             string? searchTerm = null,
@@ -32,6 +34,7 @@ namespace Repository.Interfaces
             string? sortDirection = null,
             bool? isPremiumOnly = null,
             bool? isAiGenerated = null,
+            bool? isRequireValidate = null,
             QuizSetTypeEnum? quizSetType = null);
         Task<QuizSet?> UpdateQuizSetAsync(Guid id, QuizSet quizSet);
         Task<bool> SoftDeleteQuizSetAsync(Guid id);

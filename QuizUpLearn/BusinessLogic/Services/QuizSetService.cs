@@ -49,6 +49,7 @@ namespace BusinessLogic.Services
                 filters.isPremiumOnly,
                 filters.isPublished,
                 filters.isAiGenerated,
+                filters.isRequireValidate,
                 filters.quizSetType);
 
             var dtos = _mapper.Map<IEnumerable<QuizSetResponseDto>>(quizSets);
@@ -68,6 +69,7 @@ namespace BusinessLogic.Services
                 filters.isPremiumOnly,
                 filters.isPublished,
                 filters.isAiGenerated,
+                filters.isRequireValidate,
                 filters.quizSetType);
 
             var dtos = _mapper.Map<IEnumerable<QuizSetResponseDto>>(quizSets);
@@ -84,6 +86,7 @@ namespace BusinessLogic.Services
                 pagination.SortDirection,
                 filters.isPremiumOnly,
                 filters.isAiGenerated,
+                filters.isRequireValidate,
                 filters.quizSetType);
 
             var dtos = _mapper.Map<IEnumerable<QuizSetResponseDto>>(quizSets);
@@ -112,19 +115,20 @@ namespace BusinessLogic.Services
             return _mapper.Map<QuizSetResponseDto>(quizSet);
         }
 
-        private (bool? isDeleted, bool? isPremiumOnly, bool? isPublished, bool? isAiGenerated, QuizSetTypeEnum? quizSetType) ExtractFilterValues(PaginationRequestDto pagination)
+        private (bool? isDeleted, bool? isPremiumOnly, bool? isPublished, bool? isAiGenerated, bool? isRequireValidate, QuizSetTypeEnum? quizSetType) ExtractFilterValues(PaginationRequestDto pagination)
         {
             var jsonExtractHelper = new JsonExtractHelper();
             if (pagination.Filters == null)
-                return (null, null, null, null, null);
+                return (null, null, null, null, null, null);
 
             bool? showDeleted = jsonExtractHelper.GetBoolFromFilter(pagination.Filters, "isDeleted");
             bool? showPremiumOnly = jsonExtractHelper.GetBoolFromFilter(pagination.Filters, "isPremiumOnly");
             bool? showPublished = jsonExtractHelper.GetBoolFromFilter(pagination.Filters, "isPublished");
             bool? showAIGenerated = jsonExtractHelper.GetBoolFromFilter(pagination.Filters, "isAiGenerated");
+            bool? showIsRequireValidate = jsonExtractHelper.GetBoolFromFilter(pagination.Filters, "isRequireValidate");
             QuizSetTypeEnum? quizSetType = jsonExtractHelper.GetEnumFromFilter(pagination.Filters, "quizSetType");
 
-            return (showDeleted, showPremiumOnly, showPublished, showAIGenerated, quizSetType);
+            return (showDeleted, showPremiumOnly, showPublished, showAIGenerated, showIsRequireValidate, quizSetType);
         }
 
         public async Task<bool> RequestValidateByModAsync(Guid id)
