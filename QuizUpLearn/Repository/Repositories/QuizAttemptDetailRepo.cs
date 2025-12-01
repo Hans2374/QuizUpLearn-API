@@ -25,6 +25,20 @@ namespace Repository.Repositories
             return quizAttemptDetail;
         }
 
+        public async Task<int> CreateBatchAsync(IEnumerable<QuizAttemptDetail> quizAttemptDetails)
+        {
+            var detailsList = quizAttemptDetails.ToList();
+            foreach (var detail in detailsList)
+            {
+                // Set the foreign key properties based on the provided IDs
+                detail.QuizAttemptId = detail.AttemptId;
+                detail.QuizId = detail.QuestionId;
+            }
+            
+            await _context.QuizAttemptDetails.AddRangeAsync(detailsList);
+            return await _context.SaveChangesAsync();
+        }
+
         public async Task<IEnumerable<QuizAttemptDetail>> GetAllAsync(bool includeDeleted = false)
         {
             return await _context.QuizAttemptDetails

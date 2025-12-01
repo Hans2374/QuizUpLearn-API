@@ -15,6 +15,7 @@ namespace BusinessLogic.Interfaces
 		Task<IEnumerable<TournamentResponseDto>> GetAllAsync(bool includeDeleted = false);
 		Task<IEnumerable<TournamentResponseDto>> GetByMonthAsync(int year, int month, bool includeDeleted = false);
 		Task<bool> IsUserJoinedAsync(Guid tournamentId, Guid userId);
+		Task<IEnumerable<TournamentLeaderboardItemDto>> GetLeaderboardAsync(Guid tournamentId);
 	}
 }
 

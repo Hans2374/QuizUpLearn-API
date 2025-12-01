@@ -11,17 +11,23 @@ namespace BusinessLogic.Services
 		private readonly ITournamentParticipantRepo _participantRepo;
 		private readonly ITournamentQuizSetRepo _tournamentQuizSetRepo;
 		private readonly IQuizSetRepo _quizSetRepo;
+		private readonly IQuizAttemptRepo _quizAttemptRepo;
+		private readonly IUserRepo _userRepo;
 
 		public TournamentService(
 			ITournamentRepo tournamentRepo,
 			ITournamentParticipantRepo participantRepo,
 			ITournamentQuizSetRepo tournamentQuizSetRepo,
-			IQuizSetRepo quizSetRepo)
+			IQuizSetRepo quizSetRepo,
+			IQuizAttemptRepo quizAttemptRepo,
+			IUserRepo userRepo)
 		{
 			_tournamentRepo = tournamentRepo;
 			_participantRepo = participantRepo;
 			_tournamentQuizSetRepo = tournamentQuizSetRepo;
 			_quizSetRepo = quizSetRepo;
+			_quizAttemptRepo = quizAttemptRepo;
+			_userRepo = userRepo;
 		}
 
 		public async Task<TournamentResponseDto> CreateAsync(CreateTournamentRequestDto dto)
@@ -293,6 +299,72 @@ namespace BusinessLogic.Services
 		public async Task<bool> IsUserJoinedAsync(Guid tournamentId, Guid userId)
 		{
 			return await _participantRepo.ExistsAsync(tournamentId, userId);
+		}
+
+		public async Task<IEnumerable<TournamentLeaderboardItemDto>> GetLeaderboardAsync(Guid tournamentId)
+		{
+			var tournament = await _tournamentRepo.GetByIdAsync(tournamentId) ?? throw new ArgumentException("Tournament not found");
+
+			// Lấy tất cả quiz sets của tournament
+			var tournamentQuizSets = await _tournamentQuizSetRepo.GetByTournamentAsync(tournamentId);
+			var quizSetIds = tournamentQuizSets.Select(tqs => tqs.QuizSetId).ToList();
+
+			if (!quizSetIds.Any())
+			{
+				return new List<TournamentLeaderboardItemDto>();
+			}
+
+			// Lấy tất cả quiz attempts của các quiz set trong tournament (chỉ completed)
+			var allAttempts = new List<Repository.Entities.QuizAttempt>();
+			foreach (var quizSetId in quizSetIds)
+			{
+				var attempts = await _quizAttemptRepo.GetByQuizSetIdAsync(quizSetId, includeDeleted: false);
+				var completedAttempts = attempts.Where(a => a.Status == "completed" && a.DeletedAt == null);
+				allAttempts.AddRange(completedAttempts);
+			}
+
+			// Group by UserId và tính tổng điểm
+			var leaderboardData = allAttempts
+				.GroupBy(a => a.UserId)
+				.Select(g => new
+				{
+					UserId = g.Key,
+					TotalScore = g.Sum(a => a.Score),
+					TotalAttempts = g.Count(),
+					TotalCorrectAnswers = g.Sum(a => a.CorrectAnswers),
+					TotalQuestions = g.Sum(a => a.TotalQuestions),
+					AverageScore = g.Average(a => (decimal)a.Score),
+					AverageAccuracy = g.Average(a => a.Accuracy)
+				})
+				.OrderByDescending(x => x.TotalScore)
+				.ThenByDescending(x => x.AverageAccuracy)
+				.ToList();
+
+			// Lấy thông tin user và tạo leaderboard items
+			var result = new List<TournamentLeaderboardItemDto>();
+			int rank = 1;
+			foreach (var item in leaderboardData)
+			{
+				var user = await _userRepo.GetByIdAsync(item.UserId);
+				if (user == null) continue;
+
+				result.Add(new TournamentLeaderboardItemDto
+				{
+					Rank = rank++,
+					UserId = item.UserId,
+					Username = user.Username,
+					FullName = user.FullName,
+					AvatarUrl = user.AvatarUrl,
+					TotalScore = item.TotalScore,
+					AverageScore = item.AverageScore,
+					AverageAccuracy = item.AverageAccuracy,
+					TotalAttempts = item.TotalAttempts,
+					TotalCorrectAnswers = item.TotalCorrectAnswers,
+					TotalQuestions = item.TotalQuestions
+				});
+			}
+
+			return result;
 		}
 
 		private static TournamentResponseDto MapResponse(Tournament t, int totalQuizSets)

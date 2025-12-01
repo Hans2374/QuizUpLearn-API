@@ -294,6 +294,72 @@ namespace BusinessLogic.Services
             return result;
         }
 
+        /// <summary>
+        /// Lấy Leaderboard của Event với ranking và badges
+        /// </summary>
+        public async Task<EventLeaderboardResponseDto> GetEventLeaderboardAsync(Guid eventId)
+        {
+            var eventEntity = await _eventRepo.GetByIdWithDetailsAsync(eventId);
+            if (eventEntity == null)
+                throw new ArgumentException("Event không tồn tại");
+
+            // Lấy participants và sort theo Score (cao → thấp), sau đó theo Accuracy
+            var participants = await _eventParticipantRepo.GetByEventIdAsync(eventId);
+            var sortedParticipants = participants
+                .OrderByDescending(p => p.Score)
+                .ThenByDescending(p => p.Accuracy)
+                .ThenBy(p => p.JoinAt)
+                .ToList();
+
+            // Update rank cho participants
+            var rankings = new List<EventLeaderboardItemDto>();
+            long currentRank = 1;
+
+            foreach (var participant in sortedParticipants)
+            {
+                var isTopThree = currentRank <= 3;
+                var badge = currentRank switch
+                {
+                    1 => "🥇",
+                    2 => "🥈",
+                    3 => "🥉",
+                    _ => ""
+                };
+
+                rankings.Add(new EventLeaderboardItemDto
+                {
+                    Rank = currentRank,
+                    ParticipantId = participant.ParticipantId,
+                    ParticipantName = participant.Participant?.FullName ?? "Unknown",
+                    AvatarUrl = participant.Participant?.AvatarUrl,
+                    Score = participant.Score,
+                    Accuracy = participant.Accuracy,
+                    JoinAt = participant.JoinAt,
+                    FinishAt = participant.FinishAt,
+                    IsTopThree = isTopThree,
+                    Badge = badge
+                });
+
+                currentRank++;
+            }
+
+            // Lấy top player (rank 1)
+            var topPlayer = rankings.FirstOrDefault();
+
+            return new EventLeaderboardResponseDto
+            {
+                EventId = eventEntity.Id,
+                EventName = eventEntity.Name,
+                EventStatus = eventEntity.Status,
+                TotalParticipants = rankings.Count,
+                EventStartDate = eventEntity.StartDate,
+                EventEndDate = eventEntity.EndDate,
+                Rankings = rankings,
+                TopPlayer = topPlayer,
+                GeneratedAt = DateTime.UtcNow
+            };
+        }
+
         public async Task<bool> JoinEventAsync(Guid eventId, Guid userId)
         {
             var eventEntity = await _eventRepo.GetByIdAsync(eventId);

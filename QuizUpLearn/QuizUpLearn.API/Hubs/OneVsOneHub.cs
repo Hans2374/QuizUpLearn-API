@@ -32,6 +32,54 @@ namespace QuizUpLearn.API.Hubs
             _hubContext = hubContext;
         }
 
+        // ==================== HELPER METHODS ====================
+        /// <summary>
+        /// Build ShowQuestion payload with group item data for TOEIC-style grouped questions
+        /// </summary>
+        private object BuildShowQuestionPayload(QuestionDto question, OneVsOneRoomDto? room)
+        {
+            QuizGroupItemDto? groupItem = null;
+            
+            // Get group item if this question belongs to a group (TOEIC Parts 3,4,6,7)
+            // Parts 1, 2, 5 are standalone - don't need group display
+            var toeicPart = question.ToeicPart?.ToUpperInvariant();
+            var partsWithGroupContent = new[] { "PART3", "PART4", "PART6", "PART7" };
+            var shouldIncludeGroup = toeicPart != null && partsWithGroupContent.Contains(toeicPart);
+            
+            if (shouldIncludeGroup && 
+                question.QuizGroupItemId.HasValue && 
+                room?.QuizGroupItems != null && 
+                room.QuizGroupItems.TryGetValue(question.QuizGroupItemId.Value, out var foundGroupItem))
+            {
+                groupItem = foundGroupItem;
+            }
+
+            return new
+            {
+                // Question data
+                QuestionId = question.QuestionId,
+                QuestionText = question.QuestionText,
+                ImageUrl = question.ImageUrl,
+                AudioUrl = question.AudioUrl,
+                AnswerOptions = question.AnswerOptions,
+                QuestionNumber = question.QuestionNumber,
+                TotalQuestions = question.TotalQuestions,
+                TimeLimit = question.TimeLimit ?? 30,
+                QuizGroupItemId = question.QuizGroupItemId,
+                ToeicPart = question.ToeicPart, // Include TOEIC Part for frontend logic
+                
+                // Group item data (for TOEIC-style grouped questions with shared passage/audio/image)
+                // Only included for Parts 3, 4, 6, 7
+                GroupItem = groupItem != null ? new
+                {
+                    Id = groupItem.Id,
+                    AudioUrl = groupItem.AudioUrl,
+                    ImageUrl = groupItem.ImageUrl,
+                    PassageText = groupItem.PassageText
+                } : null
+            };
+        }
+
         // ==================== CONNECTION LIFECYCLE ====================
         public override async Task OnConnectedAsync()
         {
@@ -257,8 +305,10 @@ namespace QuizUpLearn.API.Hubs
 
                 await Task.Delay(4000);
 
+                // Send first question with group item data (for TOEIC-style grouped questions)
                 var firstQuestion = room.Questions[0];
-                await Clients.Group($"Room_{roomPin}").SendAsync("ShowQuestion", firstQuestion);
+                var questionPayload = BuildShowQuestionPayload(firstQuestion, room);
+                await Clients.Group($"Room_{roomPin}").SendAsync("ShowQuestion", questionPayload);
 
                 _ = StartQuestionTimerAsync(roomPin, firstQuestion.QuestionId);
             }
@@ -365,8 +415,10 @@ namespace QuizUpLearn.API.Hubs
 
                 _logger.LogInformation($"✅ Room {roomPin} auto-moving to next question (Index: {room.CurrentQuestionIndex + 1}/{room.Questions.Count})");
 
+                // Send next question with group item data (for TOEIC-style grouped questions)
                 var nextQuestion = room.Questions[room.CurrentQuestionIndex];
-                await _hubContext.Clients.Group($"Room_{roomPin}").SendAsync("ShowQuestion", nextQuestion);
+                var questionPayload = BuildShowQuestionPayload(nextQuestion, room);
+                await _hubContext.Clients.Group($"Room_{roomPin}").SendAsync("ShowQuestion", questionPayload);
                 
                 _logger.LogInformation($"✅ ShowQuestion sent for room {roomPin}, question {room.CurrentQuestionIndex + 1}");
 
@@ -477,16 +529,27 @@ namespace QuizUpLearn.API.Hubs
         }
         private async Task<ResponseUserDto?> GetAuthenticatedUserAsync()
         {
-            var accountIdClaim = Context.User?.FindFirst("UserId")?.Value
-                ?? Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                ?? Context.User?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+            // JWT Token structure:
+            // - "sub" = Account ID (primary key for authentication)
+            // - "userId" = User ID (the actual User entity ID, different from Account)
+            // We need the Account ID to look up the user via GetByAccountIdAsync
+            
+            // Note: .NET JWT handler maps "sub" claim to ClaimTypes.NameIdentifier by default
+            // So we check multiple claim types to ensure compatibility
+            var accountIdClaim = Context.User?.FindFirst(JwtRegisteredClaimNames.Sub)?.Value  // Raw "sub"
+                ?? Context.User?.FindFirst("sub")?.Value  // Also try raw string "sub"
+                ?? Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value  // .NET mapped sub
+                ?? Context.User?.FindFirst("UserId")?.Value;  // Fallback to userId claim
 
             if (string.IsNullOrEmpty(accountIdClaim) || !Guid.TryParse(accountIdClaim, out var accountId))
             {
-                _logger.LogWarning($"❌ Failed to get Account ID from JWT token. Claims: {string.Join(", ", Context.User?.Claims.Select(c => $"{c.Type}={c.Value}") ?? Array.Empty<string>())}");
+                var allClaims = Context.User?.Claims.Select(c => $"{c.Type}={c.Value}") ?? Array.Empty<string>();
+                _logger.LogWarning($"❌ Failed to get Account ID from JWT token. Available claims: {string.Join(", ", allClaims)}");
                 await Clients.Caller.SendAsync("Error", "Invalid user authentication. Account ID not found in token.");
                 return null;
             }
+
+            _logger.LogInformation($"✅ Found Account ID: {accountId} from claim");
 
             var user = await _userService.GetByAccountIdAsync(accountId);
             if (user == null)
