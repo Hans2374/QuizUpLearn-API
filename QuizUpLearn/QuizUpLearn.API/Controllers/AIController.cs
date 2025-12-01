@@ -1,6 +1,7 @@
 ﻿using BusinessLogic.DTOs.AiDtos;
 using BusinessLogic.DTOs.QuizSetDtos;
 using BusinessLogic.Interfaces;
+using BusinessLogic.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
@@ -101,6 +102,30 @@ namespace QuizUpLearn.API.Controllers
                 IsAIGenerated = true
             });
             var quizSetId = createdQuizSet.Id;
+            switch (quizPart)
+            {
+                case QuizPartEnum.PART1:
+                    await _aiService.GeneratePracticeQuizSetPart1Async(inputData, quizSetId);
+                    break;
+                case QuizPartEnum.PART2:
+                    await _aiService.GeneratePracticeQuizSetPart2Async(inputData, quizSetId);
+                    break;
+                case QuizPartEnum.PART3:
+                    await _aiService.GeneratePracticeQuizSetPart3Async(inputData, quizSetId);
+                    break;
+                case QuizPartEnum.PART4:
+                    await _aiService.GeneratePracticeQuizSetPart4Async(inputData, quizSetId);
+                    break;
+                case QuizPartEnum.PART5:
+                    await _aiService.GeneratePracticeQuizSetPart5Async(inputData, quizSetId);
+                    break;
+                case QuizPartEnum.PART6:
+                    await _aiService.GeneratePracticeQuizSetPart6Async(inputData, quizSetId);
+                    break;
+                case QuizPartEnum.PART7:
+                    await _aiService.GeneratePracticeQuizSetPart7Async(inputData, quizSetId);
+                    break;
+            }
 
             _ = _workerService.EnqueueJob(async (sp, token) =>
             {
@@ -211,6 +236,15 @@ namespace QuizUpLearn.API.Controllers
             var userId = (Guid)HttpContext.Items["UserId"]!;
 
             var result = await _aiService.AnalyzeUserMistakesAndAdviseAsync(userId);
+            return Ok(result);
+        }
+        [HttpPost("generate-fix-weakpoint-quiz-set")]
+        [SubscriptionAndRoleAuthorize("Moderator", "User", RequireAiFeatures = true, CheckRemainingUsage = true, RequirePremiumContent = true)]
+        public async Task<IActionResult> GenerateFixWeakPointQuizSet()
+        {
+            var userId = (Guid)HttpContext.Items["UserId"]!;
+
+            var result = await _aiService.GenerateFixWeakPointQuizSetAsync(userId);
             return Ok(result);
         }
     }

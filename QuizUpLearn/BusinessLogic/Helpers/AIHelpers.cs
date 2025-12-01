@@ -12,6 +12,14 @@ namespace BusinessLogic.Helpers
         Female,
         Narrator
     }
+    public class GenerationPurpose
+    {
+        public const string QUIZ= "QuizGeneration";
+        public const string AUDIO = "AudioGeneration";
+        public const string IMAGE = "ImageGeneration";
+        public const string PASSAGE = "PassageGeneration";
+        public const string CONVERSATION_AUDIO = "ConversationAudioGeneration";
+    }
     public class PromptGenerateQuizSetHelper
     {
         public PromptGenerateQuizSetHelper()
@@ -62,7 +70,7 @@ Return only these 2 fields as JSON structure:
         public string GetQuizSetPart1Prompt(AiGenerateQuizSetRequestDto inputData, string previousImageDescription, string previousQuestionText)
         {
             return $@"
-Generate a TOEIC practice quiz titled: '{inputData.Topic}'.
+Topic: '{inputData.Topic}'.
 Description: Focus on TOEIC Part 1 , 
 suitable for learners with TOEIC scores around {inputData.Difficulty}.
 Question should describe a photo scene with one correct answer among four choices. 
@@ -95,7 +103,7 @@ Only return in this structure no need any extended field/infor:
         public string GetQuizSetPart2Prompt(AiGenerateQuizSetRequestDto inputData, string previousQuestionText)
         {
             return $@"
-Generate a TOEIC practice quiz titled: '{inputData.Topic}'.
+Topic: '{inputData.Topic}'.
 Description: Focus on TOEIC Part 2, 
 suitable for learners with TOEIC scores around {inputData.Difficulty}.
 Question have 3 answers, each answer should have different context then the correct one is the answer that fit with the topic, you have to generate question text, answer options. 
@@ -146,7 +154,8 @@ Only return in this structure:
         public string GetPart3QuizPrompt(string audioScript, string previousQuizText)
         {
             return $@"
-Based on this audio script: {audioScript}
+Based on this audio conversation script: {audioScript}
+
 Generate ONE TOEIC Part 3 question with 3 wrong answers and 1 correct answer.
 
 Avoid the previous question text(if it is not null): {previousQuizText}
@@ -211,7 +220,7 @@ Only return in this structure no need any extended field/infor:
         public string GetPart5Prompt(AiGenerateQuizSetRequestDto inputData, string previousQuestionText)
         {
             return $@"
-Generate a TOEIC practice quiz titled: '{inputData.Topic}'.
+Topic: '{inputData.Topic}'.
 Description: Focus on TOEIC Part 5 - in this part the question will be an incomplete sentence with 4 answer to fill in, 
 suitable for learners with TOEIC scores around {inputData.Difficulty}.
 

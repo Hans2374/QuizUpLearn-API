@@ -268,24 +268,143 @@ namespace BusinessLogic.Services
             return await response.Content.ReadAsByteArrayAsync();
         }
 
-        private async Task<byte[]> GenerateConversationAudioAsync(AiConversationAudioScriptResponseDto conversation)
+        private async Task<byte[]> GenerateConversationAudioAsync(List<ConversationLineDto> conversation)
         {
             using var combinedStream = new MemoryStream();
             var silenceBytes = new byte[13230];
 
-            foreach (var line in conversation.AudioScripts)
+            foreach (var line in conversation)
             {
                 var lineAudioBytes = await GenerateAudioAsync(line.Text, line.Role);
 
                 await combinedStream.WriteAsync(lineAudioBytes, 0, lineAudioBytes.Length);
 
-                if (line != conversation.AudioScripts.Last())
+                if (line != conversation.Last())
                     await combinedStream.WriteAsync(silenceBytes, 0, silenceBytes.Length);
             }
 
             return combinedStream.ToArray();
         }
-        
+
+        private async Task<AiGenerateQuizResponseDto> GenerateWithRetryAsync(List<string> purposes, string prompt)
+        {
+            while (true)
+            {
+                var response = await GeminiGenerateContentAsync(prompt);
+                try
+                {
+                    var quizResult = JsonSerializer.Deserialize<AiGenerateQuizResponseDto>(response);
+
+                    if (quizResult == null) throw new Exception("Invalid json");
+
+                    if (purposes.Contains(GenerationPurpose.QUIZ))
+                    {
+                        if (string.IsNullOrWhiteSpace(quizResult.QuestionText) ||
+                                quizResult.AnswerOptions == null ||
+                                quizResult.AnswerOptions.Count == 0)
+                            throw new JsonException("Invalid quiz");
+                    }
+                    if (purposes.Contains(GenerationPurpose.AUDIO))
+                    {
+                        if (string.IsNullOrWhiteSpace(quizResult.AudioScript))
+                            throw new JsonException("Invalid audio script");
+                    }
+                    if (purposes.Contains(GenerationPurpose.IMAGE))
+                    {
+                        if (string.IsNullOrWhiteSpace(quizResult.ImageDescription))
+                            throw new JsonException("Invalid image description");
+                    }
+                    if (purposes.Contains(GenerationPurpose.PASSAGE))
+                    {
+                        if (string.IsNullOrWhiteSpace(quizResult.Passage))
+                            throw new JsonException("Invalid passage");
+                    }
+                    if (purposes.Contains(GenerationPurpose.CONVERSATION_AUDIO))
+                    {
+                        if (quizResult.AudioScripts == null || quizResult.AudioScripts.Count == 0)
+                            throw new JsonException("Invalid conversation audio scripts");
+                    }
+
+                    return quizResult;
+                }
+                catch
+                {
+                    Console.WriteLine("AI JSON invalid. Retrying...");
+                }
+            }
+        }
+
+        private async Task<string> CreateAudioAsync(string? script, List<ConversationLineDto>? AudioScripts, Guid userId, int part, VoiceRoles? voiceRole = null)
+        {
+            byte[] audioBytes = [];
+
+            if (script == null && AudioScripts != null)
+            {
+                audioBytes = await GenerateConversationAudioAsync(AudioScripts);
+            }
+            if (script != null && AudioScripts == null)
+            {
+                audioBytes = await GenerateAudioAsync(script, voiceRole ?? VoiceRoles.Narrator);
+            }
+
+            var file = await _uploadService.ConvertByteArrayToIFormFile(audioBytes, $"audio-Part{part}-{userId}-{DateTime.UtcNow}.mp3", "audio/mpeg");
+            var result = await _uploadService.UploadAsync(file);
+            return result.Url;
+        }
+
+        private async Task<string> CreateImageAsync(string description, Guid userId, int part)
+        {
+            var imageBytes = await GenerateImageAsync(description);
+            var file = await _uploadService.ConvertByteArrayToIFormFile(imageBytes, $"image-Part{part}-{userId}-{DateTime.UtcNow}.png", "image/png");
+            var result = await _uploadService.UploadAsync(file);
+            return result.Url;
+        }
+
+        private async Task<QuizResponseDto> CreateQuizWithOptionsAsync(Guid quizSetId, string part, string questionText, List<AiGenerateAnswerOptionResponseDto> options, bool isAssignOptionText = true, Guid? groupItemId = null, string? audioUrl = null, string? imageUrl = null)
+        {
+            var quiz = await _quizService.CreateQuizAsync(new QuizRequestDto
+            {
+                QuizSetId = quizSetId,
+                TOEICPart = part,
+                QuestionText = questionText,
+                QuizGroupItemId = groupItemId,
+                AudioURL = audioUrl,
+                ImageURL = imageUrl,
+            });
+
+            foreach (var opt in options)
+            {
+                if (!isAssignOptionText)
+                {
+                    opt.OptionText = string.Empty;
+                }
+                await _answerOptionService.CreateAsync(new RequestAnswerOptionDto
+                {
+                    OptionLabel = opt.OptionLabel,
+                    OptionText = opt.OptionText,
+                    IsCorrect = opt.IsCorrect,
+                    QuizId = quiz.Id
+                });
+            }
+
+            return quiz;
+        }
+
+        private async Task<ResponseQuizGroupItemDto?> CreateQuizGroupItem(Guid quizSetId, string name, string? audioUrl = null, string? audioScript = null, string? imageUrl = null, string? imageDescription = null, string? passageText = null)
+        {
+            var groupItem = await _quizGroupItemService.CreateAsync(new RequestQuizGroupItemDto
+            {
+                QuizSetId = quizSetId,
+                Name = name,
+                AudioUrl = audioUrl,
+                AudioScript = audioScript,
+                ImageUrl = imageUrl,
+                ImageDescription = imageDescription,
+                PassageText = passageText
+            });
+            return groupItem;
+        }
+
         public async Task<(bool, string)> ValidateQuizSetAsync(Guid quizSetId)
         {
             var quizSet = await _quizSetService.GetQuizSetByIdAsync(quizSetId);
@@ -348,49 +467,14 @@ namespace BusinessLogic.Services
             for (int i = 0; i < inputData.QuestionQuantity; i++)
             {
                 var prompt = _promptGenerator.GetQuizSetPart1Prompt(inputData, previousImageDescription, previousQuestionText);
-                var response = await GeminiGenerateContentAsync(prompt);
-                
+                List<string> purposes = new() { GenerationPurpose.QUIZ, GenerationPurpose.IMAGE };
+                AiGenerateQuizResponseDto quiz = await GenerateWithRetryAsync(purposes, prompt);
 
-                AiGenerateQuizResponseDto? quiz;
-                try
-                {
-                    quiz = JsonSerializer.Deserialize<AiGenerateQuizResponseDto>(response);
-                    if (quiz == null
-                        || string.IsNullOrEmpty(quiz.QuestionText)
-                        || quiz.AnswerOptions == null
-                        || quiz.ImageDescription == null
-                        || quiz.AnswerOptions.Count == 0)
-                        throw new JsonException("Failed to generate valid quiz data from AI.");
+                var audioScript = string.Join(Environment.NewLine, quiz.AnswerOptions.Select(o => $"{o.OptionLabel}. {o.OptionText}"));
+                string audioUrl = await CreateAudioAsync(audioScript, null, inputData.CreatorId!.Value, 1);
+                string imageUrl = await CreateImageAsync(quiz.ImageDescription!, inputData.CreatorId!.Value, 1);
 
-                    previousImageDescription += quiz.ImageDescription + "\n";
-                }
-                catch(Exception ex)
-                {
-                    Console.WriteLine($"Invalid AI JSON: {ex.Message}");
-                    i--;
-                    continue;
-                }
-
-                var audioScript = string.Join(Environment.NewLine,quiz.AnswerOptions.Select(o => $"{o.OptionLabel}. {o.OptionText}"));
-
-                var audio = await GenerateAudioAsync(audioScript, VoiceRoles.Narrator);
-                var image = await GenerateImageAsync(quiz.ImageDescription);
-
-                var audioFile = await _uploadService.ConvertByteArrayToIFormFile(audio, $"audio-Q{i}-{inputData.CreatorId}-{DateTime.UtcNow}.mp3", "audio/mpeg");
-                var imageFile = await _uploadService.ConvertByteArrayToIFormFile(image, $"image-Q{i}-{inputData.CreatorId}-{DateTime.UtcNow}.png", "image/png");
-
-                var audioResult = await _uploadService.UploadAsync(audioFile);
-                var imageResult = await _uploadService.UploadAsync(imageFile);
-
-                var groupItem = await _quizGroupItemService.CreateAsync(new RequestQuizGroupItemDto
-                {
-                    QuizSetId = quizSetId,
-                    Name = $"Single quiz {QuizPartEnum.PART1.ToString()}",
-                    AudioUrl = audioResult.Url,
-                    AudioScript = audioScript,
-                    ImageDescription = quiz.ImageDescription,
-                    ImageUrl = imageResult.Url
-                });
+                var groupItem = await CreateQuizGroupItem(quizSetId, $"Single quiz {QuizPartEnum.PART1.ToString()}", audioUrl, audioScript, imageUrl, quiz.ImageDescription);
 
                 if (groupItem == null)
                 {
@@ -399,27 +483,16 @@ namespace BusinessLogic.Services
                     continue;
                 }
 
-                var createdQuiz = await _quizService.CreateQuizAsync(new QuizRequestDto
-                {
-                    QuizSetId = quizSetId,
-                    QuestionText = quiz.QuestionText,
-                    TOEICPart = QuizPartEnum.PART1.ToString(),
-                    AudioURL = audioResult.Url,
-                    ImageURL = imageResult.Url,
-                    QuizGroupItemId = groupItem.Id
-                });
+                var createdQuiz = await CreateQuizWithOptionsAsync(quizSetId
+                    , QuizPartEnum.PART1.ToString()
+                    , ""
+                    , quiz.AnswerOptions
+                    , false
+                    , groupItem.Id
+                    , audioUrl
+                    , imageUrl);
 
-                foreach (var item in quiz.AnswerOptions)
-                {
-                    await _answerOptionService.CreateAsync(new RequestAnswerOptionDto
-                    {
-                        OptionLabel = item.OptionLabel,
-                        OptionText = "",
-                        IsCorrect = item.IsCorrect,
-                        QuizId = createdQuiz.Id
-                    });
-                }
-
+                previousImageDescription += quiz.ImageDescription + "\n";
                 previousQuestionText += quiz.QuestionText + ", ";
             }
 
@@ -432,66 +505,27 @@ namespace BusinessLogic.Services
             for (int i = 0; i < inputData.QuestionQuantity; i++)
             {
                 var prompt = _promptGenerator.GetQuizSetPart2Prompt(inputData, previousQuestionText);
-
-                var response = await GeminiGenerateContentAsync(prompt);
-                AiGenerateQuizResponseDto? quiz;
-                try
-                {
-                    quiz = JsonSerializer.Deserialize<AiGenerateQuizResponseDto>(response);
-                    if (quiz == null
-                    || string.IsNullOrEmpty(quiz.QuestionText)
-                    || quiz.AnswerOptions == null
-                    || quiz.AnswerOptions.Count == 0)
-                        throw new JsonException("Failed to generate valid quiz data from AI.");
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Invalid AI JSON: {ex.Message}");
-                    i--;
-                    continue;
-                }
-
+                List<string> purposes = new() { GenerationPurpose.QUIZ };
+                AiGenerateQuizResponseDto quiz = await GenerateWithRetryAsync(purposes, prompt);
+                
                 var audioScript = "Question: " + quiz.QuestionText + ".\n" + string.Join(Environment.NewLine, quiz.AnswerOptions.Select(o => $"{o.OptionLabel}. {o.OptionText}"));
+                var audioUrl = await CreateAudioAsync(audioScript, null, inputData.CreatorId!.Value, 2);
 
-                var audio = await GenerateAudioAsync(audioScript, VoiceRoles.Narrator);
-                
-                var audioFile = await _uploadService.ConvertByteArrayToIFormFile(audio, $"audio-Q{i}-{inputData.CreatorId}-{DateTime.UtcNow}.mp3", "audio/mpeg");
-                
-                var audioResult = await _uploadService.UploadAsync(audioFile);
-
-                var groupItem = await _quizGroupItemService.CreateAsync(new RequestQuizGroupItemDto
-                {
-                    QuizSetId = quizSetId,
-                    Name = $"Single quiz {QuizPartEnum.PART2.ToString()}",
-                    AudioUrl = audioResult.Url,
-                    AudioScript = audioScript
-                });
-
+                var groupItem = await CreateQuizGroupItem(quizSetId, $"Single quiz {QuizPartEnum.PART2.ToString()}", audioUrl, audioScript);
                 if (groupItem == null)
                 {
                     Console.WriteLine("Failed to create quiz group item.");
                     i--;
                     continue;
                 }
-                var createdQuiz = await _quizService.CreateQuizAsync(new QuizRequestDto
-                {
-                    QuizSetId = quizSetId,
-                    QuestionText = "",
-                    TOEICPart = QuizPartEnum.PART2.ToString(),
-                    AudioURL = audioResult.Url,
-                    QuizGroupItemId = groupItem.Id
-                });
 
-                foreach (var item in quiz.AnswerOptions)
-                {
-                    await _answerOptionService.CreateAsync(new RequestAnswerOptionDto
-                    {
-                        OptionLabel = item.OptionLabel,
-                        OptionText = "",
-                        IsCorrect = item.IsCorrect,
-                        QuizId = createdQuiz.Id
-                    });
-                }
+                var createdQuiz = await CreateQuizWithOptionsAsync(quizSetId
+                    , QuizPartEnum.PART2.ToString()
+                    , ""
+                    , quiz.AnswerOptions
+                    , false
+                    , groupItem.Id
+                    , audioUrl);
 
                 previousQuestionText += quiz.QuestionText + ", ";
             }
@@ -505,35 +539,15 @@ namespace BusinessLogic.Services
             for (int i = 0; i < inputData.QuestionQuantity; i += 3)
             {
                 var audioPrompt = _promptGenerator.GetPart3AudioPrompt(inputData, previousAudioScript);
-                var audioResponse = await GeminiGenerateContentAsync(audioPrompt);
-                AiConversationAudioScriptResponseDto? conversationScripts;
-                try
-                {
-                    conversationScripts = JsonSerializer.Deserialize<AiConversationAudioScriptResponseDto>(audioResponse);
-                    if(conversationScripts == null
-                        || conversationScripts.AudioScripts.Count == 0)
-                        throw new JsonException("Failed to generate valid audio script from AI.");
-                }
-                catch(Exception ex)
-                {
-                    Console.WriteLine($"Invalid AI JSON: {ex.Message}");
-                    i--;
-                    continue;
-                }
-                previousAudioScript = string.Join("\n", audioResponse);
+                List<string> purposes = new() { GenerationPurpose.CONVERSATION_AUDIO };
 
-                var audioBytes = await GenerateConversationAudioAsync(conversationScripts);
-                var audioFile = await _uploadService.ConvertByteArrayToIFormFile(audioBytes, $"audio-G3_{i / 3 + 1}-{inputData.CreatorId}-{DateTime.UtcNow}.mp3", "audio/mpeg");
-                var audioResult = await _uploadService.UploadAsync(audioFile);
+                AiGenerateQuizResponseDto conversationScripts = await GenerateWithRetryAsync(purposes, audioPrompt);
 
-                var groupItem = await _quizGroupItemService.CreateAsync(new RequestQuizGroupItemDto
-                {
-                    QuizSetId = quizSetId,
-                    Name = $"Group3_{i / 3 + 1}",
-                    AudioUrl = audioResult.Url,
-                    AudioScript = audioResponse
-                });
+                string audioConversationScripts = string.Join(Environment.NewLine, conversationScripts.AudioScripts.Select(auScript => $"{auScript.Role}: {auScript.Text}"));
+                previousAudioScript = string.Join("\n", audioConversationScripts);
+                var audioUrl = await CreateAudioAsync(null, conversationScripts.AudioScripts, inputData.CreatorId!.Value, 3);
 
+                var groupItem = await CreateQuizGroupItem(quizSetId, $"Group3_{i / 3 + 1}", audioUrl, audioConversationScripts);
                 if(groupItem == null)
                 {
                     Console.WriteLine("Failed to create quiz group item.");
@@ -542,47 +556,19 @@ namespace BusinessLogic.Services
                 }
 
                 string previousQuizText = string.Empty;
+
                 for (int j = 0; j < 3 && i + j < inputData.QuestionQuantity; j++)
                 {
-                    var quizPrompt = _promptGenerator.GetPart3QuizPrompt(audioResponse, previousQuizText);
-                    var response = await GeminiGenerateContentAsync(quizPrompt);
-                    AiGenerateQuizResponseDto? quiz;
-                    try
-                    {
-                        quiz = JsonSerializer.Deserialize<AiGenerateQuizResponseDto>(response);
-                        if (quiz == null
-                            || string.IsNullOrEmpty(quiz.QuestionText)
-                            || quiz.AnswerOptions == null
-                            || quiz.AnswerOptions.Count == 0)
-                            throw new Exception("Failed to generate valid quiz data from AI.");
-                    }
-                    catch( Exception ex)
-                    {
-                        Console.WriteLine($"Invalid AI JSON: {ex.Message}");
-                        j--;
-                        continue;
-                    }
+                    var quizPrompt = _promptGenerator.GetPart3QuizPrompt(audioConversationScripts, previousQuizText);
+                    List<string> quizPurpose = new() { GenerationPurpose.QUIZ };
+                    AiGenerateQuizResponseDto quiz = await GenerateWithRetryAsync(quizPurpose, quizPrompt);
 
                     previousQuizText += quiz.QuestionText + ", ";
-
-                    var createdQuiz = await _quizService.CreateQuizAsync(new QuizRequestDto
-                    {
-                        QuizSetId = quizSetId,
-                        QuestionText = quiz.QuestionText,
-                        TOEICPart = QuizPartEnum.PART3.ToString(),
-                        QuizGroupItemId = groupItem.Id
-                    });
-
-                    foreach (var item in quiz.AnswerOptions)
-                    {
-                        await _answerOptionService.CreateAsync(new RequestAnswerOptionDto
-                        {
-                            OptionLabel = item.OptionLabel,
-                            OptionText = item.OptionText,
-                            IsCorrect = item.IsCorrect,
-                            QuizId = createdQuiz.Id
-                        });
-                    }
+                    var createdQuiz = await CreateQuizWithOptionsAsync(quizSetId
+                        , QuizPartEnum.PART3.ToString()
+                        , quiz.QuestionText
+                        , quiz.AnswerOptions
+                        , groupItemId: groupItem.Id);
                 }
             }
             return true;
@@ -595,36 +581,16 @@ namespace BusinessLogic.Services
             for (int i = 0; i < inputData.QuestionQuantity; i += 3)
             {
                 var audioPrompt = _promptGenerator.GetPart4AudioPrompt(inputData, previousAudioScript);
-                var audioResponse = await GeminiGenerateContentAsync(audioPrompt);
-                AiGenerateQuizResponseDto? audio = new();
-                try
-                {
-                    audio = JsonSerializer.Deserialize<AiGenerateQuizResponseDto>(audioResponse);
-                    if (audio == null || string.IsNullOrEmpty(audio.AudioScript))
-                        throw new Exception("Failed to generate valid audio script from AI.");
-                }
-                catch(Exception ex)
-                {
-                    Console.WriteLine($"Invalid AI JSON: {ex.Message}");
-                    i--;
-                    continue;
-                }
-                
+                List<string> purposes = new() { GenerationPurpose.AUDIO };
 
+                AiGenerateQuizResponseDto audio = await GenerateWithRetryAsync(purposes, audioPrompt);
+                
                 previousAudioScript = string.Join("\n", audio.AudioScript);
 
-                var audioBytes = await GenerateAudioAsync(audio.AudioScript!, VoiceRoles.Narrator);
-                var audioFile = await _uploadService.ConvertByteArrayToIFormFile(audioBytes, $"audio-G4_{i / 3 + 1}-{inputData.CreatorId}-{DateTime.UtcNow}.mp3", "audio/mpeg");
-                var audioResult = await _uploadService.UploadAsync(audioFile);
+                var audioUrl = await CreateAudioAsync(audio.AudioScript!, null, inputData.CreatorId!.Value, 4);
 
-                var groupItem = await _quizGroupItemService.CreateAsync(new RequestQuizGroupItemDto
-                {
-                    QuizSetId = quizSetId,
-                    Name = $"Group4_{i / 3 + 1}",
-                    AudioUrl = audioResult.Url,
-                    AudioScript = audio.AudioScript
-                });
-
+                var groupItem = await CreateQuizGroupItem(quizSetId, $"Group4_{i / 3 + 1}", audioUrl, audio.AudioScript);
+                
                 if(groupItem == null)
                 {
                     Console.WriteLine("Failed to create quiz group item.");
@@ -636,45 +602,17 @@ namespace BusinessLogic.Services
                 for (int j = 0; j < 3 && i + j < inputData.QuestionQuantity; j++)
                 {
                     var quizPrompt = _promptGenerator.GetPart4QuizPrompt(audio.AudioScript, previousQuizText);
-                    var response = await GeminiGenerateContentAsync(quizPrompt);
-                    AiGenerateQuizResponseDto? quiz = new();
-                    try
-                    {
-                        quiz = JsonSerializer.Deserialize<AiGenerateQuizResponseDto>(response);
-                        if (quiz == null
-                            || string.IsNullOrEmpty(quiz.QuestionText)
-                            || quiz.AnswerOptions == null
-                            || quiz.AnswerOptions.Count == 0)
-                            throw new Exception("Failed to generate valid quiz data from AI.");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"Invalid AI JSON: {ex.Message}");
-                        j--;
-                        continue;
-                    }
-                    
+                    List<string> quizPurposes = new() { GenerationPurpose.QUIZ };
+
+                    AiGenerateQuizResponseDto quiz = await GenerateWithRetryAsync(quizPurposes, quizPrompt);
 
                     previousQuizText += quiz.QuestionText + ", ";
 
-                    var createdQuiz = await _quizService.CreateQuizAsync(new QuizRequestDto
-                    {
-                        QuizSetId = quizSetId,
-                        QuestionText = quiz.QuestionText,
-                        TOEICPart = QuizPartEnum.PART4.ToString(),
-                        QuizGroupItemId = groupItem.Id
-                    });
-
-                    foreach (var item in quiz.AnswerOptions)
-                    {
-                        await _answerOptionService.CreateAsync(new RequestAnswerOptionDto
-                        {
-                            OptionLabel = item.OptionLabel,
-                            OptionText = item.OptionText,
-                            IsCorrect = item.IsCorrect,
-                            QuizId = createdQuiz.Id
-                        });
-                    }
+                    var createdQuiz = await CreateQuizWithOptionsAsync(quizSetId
+                        , QuizPartEnum.PART4.ToString()
+                        , quiz.QuestionText
+                        , quiz.AnswerOptions
+                        , groupItemId: groupItem.Id);
                 }
             }
             return true;
@@ -687,48 +625,20 @@ namespace BusinessLogic.Services
             for (int i = 0; i < inputData.QuestionQuantity; i++)
             {
                 var prompt = _promptGenerator.GetPart5Prompt(inputData, previousQuestionText);
-                var response = await GeminiGenerateContentAsync(prompt);
-                AiGenerateQuizResponseDto? quiz;
-                try
-                {
-                    quiz = JsonSerializer.Deserialize<AiGenerateQuizResponseDto>(response);
-                    if (quiz == null
-                        || string.IsNullOrEmpty(quiz.QuestionText)
-                        || quiz.AnswerOptions == null
-                        || quiz.AnswerOptions.Count == 0)
-                        throw new JsonException("Failed to generate valid quiz data from AI.");
-                }
-                catch(Exception ex)
-                {
-                    Console.WriteLine($"Invalid AI JSON: {ex.Message}");
-                    i--;
-                    continue;
-                }
+                List<string> purposes = new() { GenerationPurpose.QUIZ };
 
-                var createdQuiz = await _quizService.CreateQuizAsync(new QuizRequestDto
-                {
-                    QuizSetId = quizSetId,
-                    QuestionText = quiz.QuestionText,
-                    TOEICPart = QuizPartEnum.PART5.ToString(),
-                    CorrectAnswer = quiz.AnswerOptions.FirstOrDefault(o => o.IsCorrect)!.OptionLabel,
-                });
+                AiGenerateQuizResponseDto quiz = await GenerateWithRetryAsync(purposes, prompt);
 
-                foreach (var item in quiz.AnswerOptions)
-                {
-                    await _answerOptionService.CreateAsync(new RequestAnswerOptionDto
-                    {
-                        OptionLabel = item.OptionLabel,
-                        OptionText = item.OptionText,
-                        IsCorrect = item.IsCorrect,
-                        QuizId = createdQuiz.Id
-                    });
-                }
+                var createdQuiz = await CreateQuizWithOptionsAsync(quizSetId
+                    , QuizPartEnum.PART5.ToString()
+                    , quiz.QuestionText
+                    , quiz.AnswerOptions);
 
                 previousQuestionText += quiz.QuestionText + ", ";
             }
             return true;
         }
-
+        
         public async Task<bool> GeneratePracticeQuizSetPart6Async(AiGenerateQuizSetRequestDto inputData, Guid quizSetId)
         {
             string previousPassages = string.Empty;
@@ -736,28 +646,13 @@ namespace BusinessLogic.Services
             for (int i = 0; i < inputData.QuestionQuantity; i += 4)
             {
                 var passagePrompt = _promptGenerator.GetPart6PassagePrompt(inputData, previousPassages);
-                var passageResponse = await GeminiGenerateContentAsync(passagePrompt);
-                AiGenerateQuizResponseDto? passageResult;
-                try
-                {
-                    passageResult = JsonSerializer.Deserialize<AiGenerateQuizResponseDto>(passageResponse);
-                    if (passageResult == null || string.IsNullOrEmpty(passageResult.Passage))
-                        throw new JsonException("Failed to generate valid passage from AI.");
-                }
-                catch(Exception ex)
-                {
-                    Console.WriteLine($"Invalid AI JSON: {ex.Message}");
-                    i--;
-                    continue;
-                }
+                List<string> purposes = new() { GenerationPurpose.PASSAGE };
+
+                AiGenerateQuizResponseDto passageResult = await GenerateWithRetryAsync(purposes, passagePrompt);
                 
                 previousPassages = string.Join("\n", passageResult.Passage);
-                var groupItem = await _quizGroupItemService.CreateAsync(new RequestQuizGroupItemDto
-                {
-                    QuizSetId = quizSetId,
-                    Name = $"Group6_{i / 4 + 1}",
-                    PassageText = passageResult.Passage
-                });
+
+                var groupItem = await CreateQuizGroupItem(quizSetId, $"Group6_{i / 4 + 1}", passageText: passageResult.Passage);
 
                 if(groupItem == null)
                 {
@@ -771,25 +666,10 @@ namespace BusinessLogic.Services
                 for (int j = 1; j <= 4 && i + j <= inputData.QuestionQuantity; j++)
                 {
                     var quizPrompt = _promptGenerator.GetPart6QuizPrompt(passageResult.Passage, j, usedBlanks);
-                    var response = await GeminiGenerateContentAsync(quizPrompt);
-                    AiGenerateQuizResponseDto? quiz;
-                    try
-                    {
-                        quiz = JsonSerializer.Deserialize<AiGenerateQuizResponseDto>(response);
-                        if (quiz == null
-                            || string.IsNullOrEmpty(quiz.QuestionText)
-                            || quiz.AnswerOptions == null
-                            || quiz.AnswerOptions.Count == 0)
-                            throw new JsonException("Failed to generate valid quiz data from AI.");
-                    }
-                    catch(Exception ex)
-                    {
-                        Console.WriteLine($"Invalid AI JSON: {ex.Message}");
-                        j--;
-                        continue;
-                    }
+                    List<string> quizPurposes = new() { GenerationPurpose.QUIZ };
                     
-                    //create quiz
+                    AiGenerateQuizResponseDto quiz = await GenerateWithRetryAsync(quizPurposes, quizPrompt);
+                    
                     var createdQuiz = await _quizService.CreateQuizAsync(new QuizRequestDto
                     {
                         QuizSetId = quizSetId,
@@ -797,7 +677,7 @@ namespace BusinessLogic.Services
                         TOEICPart = QuizPartEnum.PART6.ToString(),
                         QuizGroupItemId = groupItem.Id
                     });
-                    //Create answer options
+                    
                     foreach (var item in quiz.AnswerOptions)
                     {
                         await _answerOptionService.CreateAsync(new RequestAnswerOptionDto
@@ -813,7 +693,6 @@ namespace BusinessLogic.Services
                             usedBlanks += $"{j}." + item.OptionText + ", ";
                         }
                     }
-                    //update passage with the latest blank
                     passageResult.Passage = quiz.QuestionText;
                 }
                 //Update the last passage with all blanks
@@ -825,7 +704,7 @@ namespace BusinessLogic.Services
             }
             return true;
         }
-
+        
         public async Task<bool> GeneratePracticeQuizSetPart7Async(AiGenerateQuizSetRequestDto inputData, Guid quizSetId)
         {
             string previousPassages = string.Empty;
@@ -833,29 +712,13 @@ namespace BusinessLogic.Services
             for (int i = 0; i < inputData.QuestionQuantity; i += 3)
             {
                 var passagePrompt = _promptGenerator.GetPart7PassagePrompt(inputData, previousPassages);
-                var passageResponse = await GeminiGenerateContentAsync(passagePrompt);
-                AiGenerateQuizResponseDto? passageResult;
-                try
-                {
-                    passageResult = JsonSerializer.Deserialize<AiGenerateQuizResponseDto>(passageResponse);
-                    if (passageResult == null || string.IsNullOrEmpty(passageResult.Passage))
-                        throw new JsonException("Failed to generate valid passage.");
-                }
-                catch(Exception ex)
-                {
-                    Console.WriteLine($"Invalid AI JSON: {ex.Message}");
-                    i--;
-                    continue;
-                }
+                List<string> purposes = new() { GenerationPurpose.PASSAGE };
+                
+                AiGenerateQuizResponseDto passageResult = await GenerateWithRetryAsync(purposes, passagePrompt);
 
                 previousPassages = passageResult.Passage;
 
-                var groupItem = await _quizGroupItemService.CreateAsync(new RequestQuizGroupItemDto
-                {
-                    QuizSetId = quizSetId,
-                    Name = $"Group7_{i / 3 + 1}",
-                    PassageText = passageResult.Passage
-                });
+                var groupItem = await CreateQuizGroupItem(quizSetId, $"Group7_{i / 3 + 1}", passageText: passageResult.Passage);
 
                 if(groupItem == null)
                 {
@@ -868,51 +731,23 @@ namespace BusinessLogic.Services
                 for (int j = 1; j <= 3 && i + j <= inputData.QuestionQuantity; j++)
                 {
                     var quizPrompt = _promptGenerator.GetPart7QuizPrompt(passageResult.Passage, previousQuizText);
-                    var response = await GeminiGenerateContentAsync(quizPrompt);
-                    AiGenerateQuizResponseDto? quiz;
-                    try
-                    {
-                        quiz = JsonSerializer.Deserialize<AiGenerateQuizResponseDto>(response);
-                        if (quiz == null
-                            || string.IsNullOrEmpty(quiz.QuestionText)
-                            || quiz.AnswerOptions == null
-                            || quiz.AnswerOptions.Count == 0)
-                            throw new JsonException("Failed to generate valid quiz data from AI.");
-                    }
-                    catch(Exception e)
-                    {
-                        Console.WriteLine($"Invalid AI JSON: {e.Message}");
-                        j--;
-                        continue;
-                    }
+                    List<string> quizPurposes = new() { GenerationPurpose.QUIZ };
 
+                    AiGenerateQuizResponseDto quiz = await GenerateWithRetryAsync(quizPurposes, quizPrompt);
 
                     previousQuizText += quiz.QuestionText + ", ";
 
-                    var createdQuiz = await _quizService.CreateQuizAsync(new QuizRequestDto
-                    {
-                        QuizSetId = quizSetId,
-                        QuestionText = quiz.QuestionText,
-                        TOEICPart = QuizPartEnum.PART7.ToString(),
-                        QuizGroupItemId = groupItem.Id
-                    });
-
-                    foreach (var item in quiz.AnswerOptions)
-                    {
-                        await _answerOptionService.CreateAsync(new RequestAnswerOptionDto
-                        {
-                            OptionLabel = item.OptionLabel,
-                            OptionText = item.OptionText,
-                            IsCorrect = item.IsCorrect,
-                            QuizId = createdQuiz.Id
-                        });
-                    }
+                    var createdQuiz = await CreateQuizWithOptionsAsync(quizSetId
+                        , QuizPartEnum.PART7.ToString()
+                        , quiz.QuestionText
+                        , quiz.AnswerOptions
+                        , groupItemId: groupItem.Id);
                 }
             }
 
             return true;
         }
-        //Create user weak points based on user mistakes and give advice
+        
         public async Task<PaginationResponseDto<ResponseUserWeakPointDto>> AnalyzeUserMistakesAndAdviseAsync(Guid userId)
         {
             var userMistakePage = await _userMistakeService.GetAllByUserIdAsync(userId, null!);
@@ -1009,7 +844,10 @@ namespace BusinessLogic.Services
                 //Each weak point will have 5 questions to practice
                 var newQuizSet = await _quizSetService.CreateQuizSetAsync(new QuizSetRequestDto
                 {
-                    Title = $"Practice for weak point: {wp.WeakPoint}",
+                    Title = $@"This quiz set is mainly to practice for this weak point below: 
+{wp.WeakPoint}
+And the weak point should be fix with this advice: {wp.Advice}
+",
                     Description = $"This quiz set is created to help you improve your weak point: {wp.WeakPoint}. Advice: {wp.Advice}",
                     CreatedBy = userId,
                     DifficultyLevel = wp.DifficultyLevel,
@@ -1102,7 +940,6 @@ namespace BusinessLogic.Services
 
                 createdQuizSets.Add(newQuizSet);
             }
-
             return _mapper.Map<PaginationResponseDto<QuizSetResponseDto>>(createdQuizSets);
         }
     }

@@ -17,6 +17,7 @@ namespace BusinessLogic.DTOs.AiDtos
         public string? ImageDescription { get; set; }
         public string? QuestionText { get; set; }
         public List<AiGenerateAnswerOptionResponseDto>? AnswerOptions { get; set; }
+        public List<ConversationLineDto>? AudioScripts { get; set; }
     }
     public class AiGenerateAnswerOptionResponseDto
     {
@@ -28,10 +29,6 @@ namespace BusinessLogic.DTOs.AiDtos
     {
         public bool IsValid { get; set; }
         public string Feedback { get; set; }
-    }
-    public class AiConversationAudioScriptResponseDto
-    {
-        public List<ConversationLineDto> AudioScripts { get; set; }
     }
     public class ConversationLineDto
     {
