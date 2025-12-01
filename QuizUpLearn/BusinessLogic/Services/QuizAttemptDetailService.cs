@@ -152,6 +152,7 @@ namespace BusinessLogic.Services
             int totalTimeSpent = 0;
             var answerResults = new List<AnswerResultDto>();
             var wrongQuestionIdsSet = new HashSet<Guid>();
+            var wrongAnswersByQuestion = new Dictionary<Guid, string>();
 
             // Lưu và chấm điểm từng câu trả lời
             foreach (var answer in dto.Answers)
@@ -213,6 +214,7 @@ namespace BusinessLogic.Services
                 else
                 {
                     wrongQuestionIdsSet.Add(answer.QuestionId);
+                    wrongAnswersByQuestion[answer.QuestionId] = answer.UserAnswer ?? string.Empty;
                     wrongCount++;
                 }
 
@@ -249,6 +251,7 @@ namespace BusinessLogic.Services
 
             // Nền 1: Tạo/update UserMistake cho các câu trả lời sai
             var wrongQuestionIds = wrongQuestionIdsSet.ToList();
+            var wrongAnswersSnapshot = wrongAnswersByQuestion.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
             var userId = attempt.UserId;
             var attemptId = dto.AttemptId;
 
@@ -270,9 +273,14 @@ namespace BusinessLogic.Services
                         try
                         {
                             var existingMistake = await userMistakeRepo.GetByUserIdAndQuizIdAsync(userId, quizId);
+                            wrongAnswersSnapshot.TryGetValue(quizId, out var userAnswer);
                             
+                            // Đảm bảo UserAnswer không null (dùng string.Empty nếu null hoặc empty)
+                            var safeUserAnswer = string.IsNullOrWhiteSpace(userAnswer) ? string.Empty : userAnswer;
+
                             if (existingMistake == null)
                             {
+                                // Tạo mới UserMistake với đầy đủ field
                                 await userMistakeService.AddAsync(new RequestUserMistakeDto
                                 {
                                     UserId = userId,
@@ -280,11 +288,14 @@ namespace BusinessLogic.Services
                                     TimesAttempted = 1,
                                     TimesWrong = 1,
                                     LastAttemptedAt = DateTime.UtcNow,
-                                    IsAnalyzed = false
+                                    IsAnalyzed = false,
+                                    UserAnswer = safeUserAnswer
                                 });
                             }
                             else
                             {
+                                // Update UserMistake với đầy đủ field
+                                // Lưu ý: UserAnswer chỉ update nếu có giá trị mới, không thì giữ nguyên giá trị cũ
                                 await userMistakeService.UpdateAsync(existingMistake.Id, new RequestUserMistakeDto
                                 {
                                     UserId = userId,
@@ -292,7 +303,8 @@ namespace BusinessLogic.Services
                                     TimesAttempted = existingMistake.TimesAttempted + 1,
                                     TimesWrong = existingMistake.TimesWrong + 1,
                                     LastAttemptedAt = DateTime.UtcNow,
-                                    IsAnalyzed = existingMistake.IsAnalyzed
+                                    IsAnalyzed = existingMistake.IsAnalyzed,
+                                    UserAnswer = !string.IsNullOrWhiteSpace(safeUserAnswer) ? safeUserAnswer : existingMistake.UserAnswer
                                 });
                             }
                         }
@@ -342,46 +354,70 @@ namespace BusinessLogic.Services
                 throw new InvalidOperationException("Attempt not found");
             }
 
+            // Tối ưu: Load tất cả Quiz và AnswerOptions một lần thay vì 200 lần query
+            var questionIds = dto.Answers.Select(a => a.QuestionId).Distinct().ToList();
+            var allQuizzes = await _quizRepo.GetQuizzesByIdsAsync(questionIds);
+            var quizDict = allQuizzes.ToDictionary(q => q.Id);
+
+            // Tạo dictionary cho AnswerOptions để lookup nhanh
+            var answerOptionDict = new Dictionary<Guid, AnswerOption>();
+            foreach (var quiz in allQuizzes)
+            {
+                if (quiz.AnswerOptions != null)
+                {
+                    foreach (var option in quiz.AnswerOptions)
+                    {
+                        answerOptionDict[option.Id] = option;
+                    }
+                }
+            }
+
             int totalTimeSpent = 0;
             int correctLisCount = 0;
             int correctReaCount = 0;
             var wrongQuestionIdsSet = new HashSet<Guid>();
             var wrongAnswersByQuestion = new Dictionary<Guid, string>();
+            var detailsToInsert = new List<QuizAttemptDetail>();
 
-            // Lưu và chấm điểm từng câu trả lời
+            // Lưu và chấm điểm từng câu trả lời (xử lý trong memory, không query DB)
             foreach (var answer in dto.Answers)
             {
-                // Lấy thông tin Quiz để biết TOEICPart
-                var quiz = await _quizRepo.GetQuizByIdAsync(answer.QuestionId);
-                if (quiz == null)
+                // Lấy thông tin Quiz từ dictionary (O(1) lookup)
+                if (!quizDict.TryGetValue(answer.QuestionId, out var quiz) || quiz == null)
                 {
                     continue;
                 }
 
-                // Kiểm tra đáp án đúng
+                // Kiểm tra user có chọn đáp án hay không
+                bool hasAnswer = !string.IsNullOrWhiteSpace(answer.UserAnswer);
                 bool isCorrect = false;
-                if (Guid.TryParse(answer.UserAnswer, out Guid selectedAnswerOptionId))
+
+                if (hasAnswer && Guid.TryParse(answer.UserAnswer, out Guid selectedAnswerOptionId))
                 {
-                    var selectedAnswerOption = await _answerOptionRepo.GetByIdAsync(selectedAnswerOptionId);
-                    if (selectedAnswerOption != null && selectedAnswerOption.QuizId == answer.QuestionId)
+                    // Lookup AnswerOption từ dictionary (O(1) lookup)
+                    if (answerOptionDict.TryGetValue(selectedAnswerOptionId, out var selectedAnswerOption))
                     {
-                        isCorrect = selectedAnswerOption.IsCorrect;
+                        if (selectedAnswerOption.QuizId == answer.QuestionId)
+                        {
+                            isCorrect = selectedAnswerOption.IsCorrect;
+                        }
                     }
                 }
+                // Nếu không chọn đáp án (null, empty, hoặc không parse được) → isCorrect = false
 
-                // Tạo QuizAttemptDetail
+                // Tạo QuizAttemptDetail (chưa insert)
                 var detail = new QuizAttemptDetail
                 {
                     AttemptId = dto.AttemptId,
                     QuestionId = answer.QuestionId,
-                    UserAnswer = answer.UserAnswer,
+                    UserAnswer = answer.UserAnswer ?? string.Empty, // Đảm bảo không null
                     IsCorrect = isCorrect,
                     TimeSpent = answer.TimeSpent,
                     QuizId = answer.QuestionId,
                     QuizAttemptId = dto.AttemptId
                 };
 
-                await _repo.CreateAsync(detail);
+                detailsToInsert.Add(detail);
 
                 if (answer.TimeSpent.HasValue)
                 {
@@ -401,10 +437,15 @@ namespace BusinessLogic.Services
                 }
                 else
                 {
+                    // Chỉ thêm vào wrongQuestionIdsSet nếu user đã chọn đáp án (dù sai)
+                    // Nếu không chọn đáp án, vẫn tính là sai nhưng có thể xử lý khác nếu cần
                     wrongQuestionIdsSet.Add(answer.QuestionId);
-                    wrongAnswersByQuestion[answer.QuestionId] = answer.UserAnswer;
+                    wrongAnswersByQuestion[answer.QuestionId] = answer.UserAnswer ?? string.Empty;
                 }
             }
+
+            // Batch insert tất cả QuizAttemptDetail một lần (thay vì 200 lần SaveChanges)
+            await _repo.CreateBatchAsync(detailsToInsert);
 
             // Quy đổi điểm TOEIC
             int lisPoint = ConvertToTOEICScore(correctLisCount, isListening: true);
@@ -458,9 +499,13 @@ namespace BusinessLogic.Services
                         {
                             var existingMistake = await userMistakeRepo.GetByUserIdAndQuizIdAsync(userId, quizId);
                             wrongAnswersSnapshot.TryGetValue(quizId, out var userAnswer);
+                            
+                            // Đảm bảo UserAnswer không null (dùng string.Empty nếu null hoặc empty)
+                            var safeUserAnswer = string.IsNullOrWhiteSpace(userAnswer) ? string.Empty : userAnswer;
 
                             if (existingMistake == null)
                             {
+                                // Tạo mới UserMistake với đầy đủ field
                                 await userMistakeService.AddAsync(new RequestUserMistakeDto
                                 {
                                     UserId = userId,
@@ -469,11 +514,13 @@ namespace BusinessLogic.Services
                                     TimesWrong = 1,
                                     LastAttemptedAt = DateTime.UtcNow,
                                     IsAnalyzed = false,
-                                    UserAnswer = userAnswer
+                                    UserAnswer = safeUserAnswer
                                 });
                             }
                             else
                             {
+                                // Update UserMistake với đầy đủ field
+                                // Lưu ý: UserAnswer chỉ update nếu có giá trị mới, không thì giữ nguyên giá trị cũ
                                 await userMistakeService.UpdateAsync(existingMistake.Id, new RequestUserMistakeDto
                                 {
                                     UserId = userId,
@@ -482,7 +529,7 @@ namespace BusinessLogic.Services
                                     TimesWrong = existingMistake.TimesWrong + 1,
                                     LastAttemptedAt = DateTime.UtcNow,
                                     IsAnalyzed = existingMistake.IsAnalyzed,
-                                    UserAnswer = userAnswer ?? existingMistake.UserAnswer
+                                    UserAnswer = !string.IsNullOrWhiteSpace(safeUserAnswer) ? safeUserAnswer : existingMistake.UserAnswer
                                 });
                             }
                         }
