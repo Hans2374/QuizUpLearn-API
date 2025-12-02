@@ -425,8 +425,10 @@ namespace BusinessLogic.Services
                 }
 
                 // Phân loại Listening/Reading và đếm câu đúng
-                var isListening = quiz.TOEICPart == "PART1" || quiz.TOEICPart == "PART2" || 
-                                  quiz.TOEICPart == "PART3" || quiz.TOEICPart == "PART4";
+                // Normalize TOEICPart để tránh lệch do khoảng trắng / hoa-thường ("Part1", "PART1 ", " part1", ...)
+                var normalizedPart = (quiz.TOEICPart ?? string.Empty).Trim().ToUpperInvariant();
+                var isListening = normalizedPart == "PART1" || normalizedPart == "PART2" ||
+                                  normalizedPart == "PART3" || normalizedPart == "PART4";
                 
                 if (isCorrect)
                 {

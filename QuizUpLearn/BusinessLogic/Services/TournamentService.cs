@@ -305,14 +305,18 @@ namespace BusinessLogic.Services
 		{
 			var tournament = await _tournamentRepo.GetByIdAsync(tournamentId) ?? throw new ArgumentException("Tournament not found");
 
-			// Lấy tất cả quiz sets của tournament
-			var tournamentQuizSets = await _tournamentQuizSetRepo.GetByTournamentAsync(tournamentId);
-			var quizSetIds = tournamentQuizSets.Select(tqs => tqs.QuizSetId).ToList();
+			// Lấy tất cả participants của tournament
+			var participants = await _participantRepo.GetByTournamentAsync(tournamentId);
+			var participantList = participants.ToList();
 
-			if (!quizSetIds.Any())
+			if (!participantList.Any())
 			{
 				return new List<TournamentLeaderboardItemDto>();
 			}
+
+			// Lấy tất cả quiz sets của tournament
+			var tournamentQuizSets = await _tournamentQuizSetRepo.GetByTournamentAsync(tournamentId);
+			var quizSetIds = tournamentQuizSets.Select(tqs => tqs.QuizSetId).ToList();
 
 			// Lấy tất cả quiz attempts của các quiz set trong tournament (chỉ completed)
 			var allAttempts = new List<Repository.Entities.QuizAttempt>();
@@ -329,39 +333,41 @@ namespace BusinessLogic.Services
 				.Select(g => new
 				{
 					UserId = g.Key,
-					TotalScore = g.Sum(a => a.Score),
-					TotalAttempts = g.Count(),
-					TotalCorrectAnswers = g.Sum(a => a.CorrectAnswers),
-					TotalQuestions = g.Sum(a => a.TotalQuestions),
-					AverageScore = g.Average(a => (decimal)a.Score),
-					AverageAccuracy = g.Average(a => a.Accuracy)
+					TotalScore = g.Sum(a => a.Score)
 				})
-				.OrderByDescending(x => x.TotalScore)
-				.ThenByDescending(x => x.AverageAccuracy)
-				.ToList();
+				.ToDictionary(x => x.UserId, x => x.TotalScore);
 
-			// Lấy thông tin user và tạo leaderboard items
+			// Tạo leaderboard items từ participants
 			var result = new List<TournamentLeaderboardItemDto>();
-			int rank = 1;
-			foreach (var item in leaderboardData)
+			foreach (var participant in participantList)
 			{
-				var user = await _userRepo.GetByIdAsync(item.UserId);
+				var user = await _userRepo.GetByIdAsync(participant.ParticipantId);
 				if (user == null) continue;
+
+				var score = leaderboardData.ContainsKey(participant.ParticipantId) 
+					? leaderboardData[participant.ParticipantId] 
+					: 0;
 
 				result.Add(new TournamentLeaderboardItemDto
 				{
-					Rank = rank++,
-					UserId = item.UserId,
+					UserId = participant.ParticipantId,
 					Username = user.Username,
 					FullName = user.FullName,
 					AvatarUrl = user.AvatarUrl,
-					TotalScore = item.TotalScore,
-					AverageScore = item.AverageScore,
-					AverageAccuracy = item.AverageAccuracy,
-					TotalAttempts = item.TotalAttempts,
-					TotalCorrectAnswers = item.TotalCorrectAnswers,
-					TotalQuestions = item.TotalQuestions
+					Score = score,
+					Date = participant.JoinAt
 				});
+			}
+
+			// Sắp xếp theo điểm giảm dần và gán rank
+			result = result
+				.OrderByDescending(x => x.Score)
+				.ThenBy(x => x.Date)
+				.ToList();
+
+			for (int i = 0; i < result.Count; i++)
+			{
+				result[i].Rank = i + 1;
 			}
 
 			return result;

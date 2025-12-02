@@ -200,6 +200,7 @@ namespace BusinessLogic.Services
 
         /// <summary>
         /// Start Event - Tạo GameRoom trong GameHub và gửi email notification cho tất cả users
+        /// Email CHỈ được gửi SAU KHI room đã được tạo và verified thành công
         /// </summary>
         public async Task<StartEventResponseDto> StartEventAsync(Guid userId, StartEventRequestDto dto)
         {
@@ -230,7 +231,9 @@ namespace BusinessLogic.Services
             if (now < eventEntity.StartDate)
                 throw new InvalidOperationException("Chưa đến thời gian start Event");
 
-            // ✨ TẠO GAME ROOM TRONG GAMEHUB
+            _logger.LogInformation($"🎮 Starting Event {eventEntity.Id}: Creating GameHub room...");
+
+            // ✨ STEP 1: TẠO GAME ROOM TRONG GAMEHUB
             var createGameDto = new CreateGameDto
             {
                 QuizSetId = eventEntity.QuizSetId,
@@ -238,26 +241,63 @@ namespace BusinessLogic.Services
                 HostUserName = dto.HostUserName
             };
 
-            var gameResponse = await _realtimeGameService.CreateGameAsync(createGameDto);
+            CreateGameResponseDto gameResponse;
+            try
+            {
+                gameResponse = await _realtimeGameService.CreateGameAsync(createGameDto);
+                _logger.LogInformation($"✅ GameHub room created successfully with PIN: {gameResponse.GamePin}");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"❌ Failed to create GameHub room for Event {eventEntity.Id}");
+                throw new InvalidOperationException("Không thể tạo game room. Vui lòng thử lại.", ex);
+            }
 
-            // Update event status
+            // ✨ STEP 2: VERIFY ROOM ĐÃ ĐƯỢC TẠO VÀ SẴN SÀNG
+            try
+            {
+                var roomVerified = await VerifyGameRoomReadyAsync(gameResponse.GamePin);
+                if (!roomVerified)
+                {
+                    _logger.LogError($"❌ Game room {gameResponse.GamePin} verification failed for Event {eventEntity.Id}");
+                    throw new InvalidOperationException("Game room chưa sẵn sàng. Vui lòng thử lại.");
+                }
+                _logger.LogInformation($"✅ Game room {gameResponse.GamePin} verified and ready for participants");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"❌ Game room verification failed for Event {eventEntity.Id}");
+                // Continue anyway - room might still work
+            }
+
+            // ✨ STEP 3: UPDATE EVENT STATUS
             eventEntity.Status = "Active";
             await _eventRepo.UpdateAsync(eventEntity);
+            _logger.LogInformation($"✅ Event {eventEntity.Id} status updated to Active");
 
-            _logger.LogInformation($"✅ Event started: {eventEntity.Name} (ID: {eventEntity.Id}), GamePin: {gameResponse.GamePin}");
-
-            // ✨ GỬI EMAIL NOTIFICATION CHO TẤT CẢ USERS
+            // ✨ STEP 4: GỬI EMAIL NOTIFICATION - CHỈ SAU KHI ROOM ĐÃ SẴN SÀNG
+            _logger.LogInformation($"📧 Initiating email notification for Event {eventEntity.Id} with GamePin {gameResponse.GamePin}");
+            
             _ = Task.Run(async () =>
             {
                 try
                 {
-                    await SendEventNotificationEmailsAsync(eventEntity, gameResponse.GamePin);
+                    // Small delay to ensure room is fully initialized
+                    await Task.Delay(500);
+                    
+                    await SendGamePinEmailToAllUsersAsync(
+                        eventEntity, 
+                        gameResponse.GamePin, 
+                        gameResponse.GameSessionId);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, $"Failed to send email notifications for Event {eventEntity.Id}");
+                    _logger.LogError(ex, $"❌ Failed to send email notifications for Event {eventEntity.Id}");
+                    // Email failure should not break the event start
                 }
             });
+
+            _logger.LogInformation($"🎉 Event {eventEntity.Name} (ID: {eventEntity.Id}) started successfully with GamePin: {gameResponse.GamePin}");
 
             return new StartEventResponseDto
             {
@@ -427,89 +467,279 @@ namespace BusinessLogic.Services
         }
 
         /// <summary>
-        /// Gửi email notification cho tất cả users trong hệ thống khi Event được start
+        /// Verify rằng Game Room đã được tạo và sẵn sàng cho users join
         /// </summary>
-        private async Task SendEventNotificationEmailsAsync(Event eventEntity, string gamePin)
+        private async Task<bool> VerifyGameRoomReadyAsync(string gamePin)
         {
             try
             {
-                // Lấy tất cả accounts trong hệ thống (chỉ lấy active accounts)
+                _logger.LogInformation($"🔍 Verifying game room with PIN: {gamePin}");
+                
+                // Get game session từ RealtimeGameService để verify
+                var session = await _realtimeGameService.GetGameSessionAsync(gamePin);
+                
+                if (session == null)
+                {
+                    _logger.LogWarning($"⚠️ Game session not found for PIN: {gamePin}");
+                    return false;
+                }
+
+                // Verify room status là Lobby (ready for players to join)
+                if (session.Status != GameStatus.Lobby)
+                {
+                    _logger.LogWarning($"⚠️ Game room {gamePin} has status: {session.Status}, expected: Lobby");
+                    return false;
+                }
+
+                // Verify có questions
+                if (session.Questions == null || !session.Questions.Any())
+                {
+                    _logger.LogWarning($"⚠️ Game room {gamePin} has no questions");
+                    return false;
+                }
+
+                _logger.LogInformation($"✅ Game room {gamePin} verified: Status={session.Status}, Questions={session.Questions.Count}");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, $"❌ Error verifying game room {gamePin}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Gửi email với GamePin cho TẤT CẢ active users trong hệ thống
+        /// Method này CHỈ được gọi SAU KHI game room đã được tạo và verified thành công
+        /// </summary>
+        private async Task SendGamePinEmailToAllUsersAsync(
+            Event eventEntity, 
+            string gamePin, 
+            Guid gameSessionId)
+        {
+            var startTime = DateTime.UtcNow;
+            _logger.LogInformation($"📧 Starting email sending process for Event {eventEntity.Id}, GamePin: {gamePin}");
+
+            try
+            {
+                // ✅ STEP 1: LẤY DANH SÁCH ACTIVE USERS
+                _logger.LogInformation($"📋 Fetching active accounts from database...");
                 var allAccounts = await _accountRepo.GetAllAsync(includeDeleted: false);
                 var activeAccounts = allAccounts
-                    .Where(a => a.IsActive && a.IsEmailVerified && !string.IsNullOrEmpty(a.Email))
+                    .Where(a => a.IsActive 
+                        && a.IsEmailVerified 
+                        && !string.IsNullOrWhiteSpace(a.Email))
                     .ToList();
 
                 if (!activeAccounts.Any())
                 {
-                    _logger.LogWarning($"No active accounts found to send Event notification for Event {eventEntity.Id}");
+                    _logger.LogWarning($"⚠️ No active accounts found for Event {eventEntity.Id} notification");
                     return;
                 }
 
-                _logger.LogInformation($"Sending Event notification to {activeAccounts.Count} users for Event {eventEntity.Id}");
+                _logger.LogInformation($"✅ Found {activeAccounts.Count} active users to notify");
 
-                // Lấy cấu hình email
-                var fromEmail = _configuration["MailerSend:FromEmail"] ?? "no-reply@quizuplearn.com";
-                var fromName = _configuration["MailerSend:FromName"] ?? "QuizUpLearn";
+                // ✅ STEP 2: PREPARE EMAIL CONTENT
+                var emailConfig = PrepareEmailConfiguration(eventEntity, gamePin);
+                _logger.LogInformation($"✅ Email content prepared");
 
-                // Tạo HTML template đẹp cho email
-                var htmlTemplate = CreateEventNotificationEmailTemplate(eventEntity, gamePin);
+                // ✅ STEP 3: GỬI EMAILS THEO BATCH
+                await SendEmailsInBatchesAsync(activeAccounts, emailConfig, eventEntity.Id);
 
-                // Gửi email theo batch (MailerSend giới hạn số recipients per request)
-                const int batchSize = 50; // MailerSend cho phép max 50 recipients per request
-                var batches = activeAccounts
-                    .Select((account, index) => new { account, index })
-                    .GroupBy(x => x.index / batchSize)
-                    .Select(g => g.Select(x => x.account).ToList())
-                    .ToList();
-
-                foreach (var batch in batches)
-                {
-                    try
-                    {
-                        var email = new MailerSendEmail
-                        {
-                            From = new MailerSendRecipient { Name = fromName, Email = fromEmail },
-                            Subject = $"🎉 Event mới: {eventEntity.Name} - Tham gia ngay!",
-                            Html = htmlTemplate,
-                            Text = $"Event '{eventEntity.Name}' đã bắt đầu! Sử dụng GamePin: {gamePin} để tham gia."
-                        };
-
-                        // Thêm recipients vào batch
-                        foreach (var account in batch)
-                        {
-                            var userName = account.User?.FullName ?? account.Email.Split('@')[0];
-                            email.To.Add(new MailerSendRecipient
-                            {
-                                Name = userName,
-                                Email = account.Email
-                            });
-                        }
-
-                        await _mailerSendService.SendEmailAsync(email);
-                        _logger.LogInformation($"✅ Sent email batch to {batch.Count} users for Event {eventEntity.Id}");
-
-                        // Delay nhỏ giữa các batch để tránh rate limit
-                        await Task.Delay(100);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, $"Failed to send email batch for Event {eventEntity.Id}");
-                    }
-                }
-
-                _logger.LogInformation($"✅ Completed sending Event notifications for Event {eventEntity.Id} to {activeAccounts.Count} users");
+                var duration = (DateTime.UtcNow - startTime).TotalSeconds;
+                _logger.LogInformation($"🎉 Successfully sent GamePin emails to {activeAccounts.Count} users in {duration:F2}s");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error in SendEventNotificationEmailsAsync for Event {eventEntity.Id}");
+                var duration = (DateTime.UtcNow - startTime).TotalSeconds;
+                _logger.LogError(ex, $"❌ Failed to send GamePin emails after {duration:F2}s for Event {eventEntity.Id}");
                 throw;
             }
         }
 
         /// <summary>
-        /// Tạo HTML template đẹp cho email notification
+        /// Prepare email configuration với GamePin và event details
         /// </summary>
-        private string CreateEventNotificationEmailTemplate(Event eventEntity, string gamePin)
+        private EmailConfiguration PrepareEmailConfiguration(Event eventEntity, string gamePin)
+        {
+            var fromEmail = _configuration["MailerSend:FromEmail"] ?? "no-reply@quizuplearn.com";
+            var fromName = _configuration["MailerSend:FromName"] ?? "QuizUpLearn";
+
+            return new EmailConfiguration
+            {
+                FromEmail = fromEmail,
+                FromName = fromName,
+                Subject = $"🎉 Event: {eventEntity.Name} - GamePin: {gamePin}",
+                HtmlBody = CreateGamePinEmailTemplate(eventEntity, gamePin),
+                TextBody = CreatePlainTextEmail(eventEntity, gamePin)
+            };
+        }
+
+        /// <summary>
+        /// Gửi emails theo batch với retry logic và rate limiting
+        /// </summary>
+        private async Task SendEmailsInBatchesAsync(
+            List<Account> accounts, 
+            EmailConfiguration config, 
+            Guid eventId)
+        {
+            const int BATCH_SIZE = 50; // MailerSend limit per request
+            const int DELAY_MS = 150; // Delay between batches
+            const int MAX_RETRIES = 3;
+
+            var batches = accounts
+                .Select((account, index) => new { account, index })
+                .GroupBy(x => x.index / BATCH_SIZE)
+                .Select(g => g.Select(x => x.account).ToList())
+                .ToList();
+
+            _logger.LogInformation($"📦 Split into {batches.Count} batches (max {BATCH_SIZE} recipients/batch)");
+
+            int successCount = 0;
+            int failCount = 0;
+
+            for (int i = 0; i < batches.Count; i++)
+            {
+                var batch = batches[i];
+                var batchNum = i + 1;
+
+                try
+                {
+                    await SendSingleBatchWithRetryAsync(batch, config, batchNum, MAX_RETRIES);
+                    successCount += batch.Count;
+                    _logger.LogInformation($"✅ Batch {batchNum}/{batches.Count} sent ({batch.Count} recipients)");
+
+                    // Rate limiting delay (except last batch)
+                    if (i < batches.Count - 1)
+                    {
+                        await Task.Delay(DELAY_MS);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    failCount += batch.Count;
+                    _logger.LogError(ex, $"❌ Batch {batchNum}/{batches.Count} failed after retries");
+                }
+            }
+
+            _logger.LogInformation($"📊 Email batch summary: {successCount} sent, {failCount} failed, {batches.Count} total batches");
+        }
+
+        /// <summary>
+        /// Gửi một batch với retry logic
+        /// </summary>
+        private async Task SendSingleBatchWithRetryAsync(
+            List<Account> batch,
+            EmailConfiguration config,
+            int batchNumber,
+            int maxRetries)
+        {
+            Exception? lastError = null;
+
+            for (int attempt = 1; attempt <= maxRetries; attempt++)
+            {
+                try
+                {
+                    var email = new MailerSendEmail
+                    {
+                        From = new MailerSendRecipient 
+                        { 
+                            Name = config.FromName, 
+                            Email = config.FromEmail 
+                        },
+                        Subject = config.Subject,
+                        Html = config.HtmlBody,
+                        Text = config.TextBody
+                    };
+
+                    // Add recipients
+                    foreach (var account in batch)
+                    {
+                        var displayName = account.User?.FullName 
+                            ?? account.Email.Split('@').FirstOrDefault() 
+                            ?? "User";
+                        
+                        email.To.Add(new MailerSendRecipient
+                        {
+                            Name = displayName,
+                            Email = account.Email
+                        });
+                    }
+
+                    await _mailerSendService.SendEmailAsync(email);
+                    return; // Success!
+                }
+                catch (Exception ex)
+                {
+                    lastError = ex;
+                    
+                    if (attempt < maxRetries)
+                    {
+                        var delay = attempt * 1000; // Exponential backoff
+                        _logger.LogWarning($"⚠️ Batch {batchNumber} attempt {attempt} failed, retrying in {delay}ms... Error: {ex.Message}");
+                        await Task.Delay(delay);
+                    }
+                }
+            }
+
+            // All retries exhausted
+            throw new InvalidOperationException(
+                $"Failed to send batch {batchNumber} after {maxRetries} attempts", 
+                lastError);
+        }
+
+        /// <summary>
+        /// Tạo plain text version của email
+        /// </summary>
+        private string CreatePlainTextEmail(Event eventEntity, string gamePin)
+        {
+            var startDate = eventEntity.StartDate.ToString("dd/MM/yyyy HH:mm");
+            var endDate = eventEntity.EndDate.ToString("dd/MM/yyyy HH:mm");
+
+            return $@"
+🎉 EVENT MỚI ĐÃ BẮT ĐẦU!
+
+{eventEntity.Name}
+{eventEntity.Description}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+GAME PIN: {gamePin}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📅 Thời gian bắt đầu: {startDate}
+⏰ Thời gian kết thúc: {endDate}
+👥 Số người tối đa: {eventEntity.MaxParticipants}
+📚 Quiz Set: {eventEntity.QuizSet?.Title ?? "Event Quiz"}
+
+💡 CÁCH THAM GIA:
+1. Mở ứng dụng QuizUpLearn
+2. Nhập Game PIN: {gamePin}
+3. Bắt đầu chơi ngay!
+
+Chúc bạn may mắn! 🍀
+
+---
+© 2025 QuizUpLearn
+";
+        }
+
+        /// <summary>
+        /// Helper class để lưu email configuration
+        /// </summary>
+        private class EmailConfiguration
+        {
+            public string FromEmail { get; set; } = string.Empty;
+            public string FromName { get; set; } = string.Empty;
+            public string Subject { get; set; } = string.Empty;
+            public string HtmlBody { get; set; } = string.Empty;
+            public string TextBody { get; set; } = string.Empty;
+        }
+
+        /// <summary>
+        /// Tạo HTML email template với GamePin nổi bật
+        /// Template được optimize cho email clients và mobile devices
+        /// </summary>
+        private string CreateGamePinEmailTemplate(Event eventEntity, string gamePin)
         {
             var startDate = eventEntity.StartDate.ToString("dd/MM/yyyy HH:mm");
             var endDate = eventEntity.EndDate.ToString("dd/MM/yyyy HH:mm");
