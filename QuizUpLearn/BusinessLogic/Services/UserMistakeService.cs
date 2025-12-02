@@ -70,5 +70,6 @@ namespace BusinessLogic.Services
             var dtos = _mapper.Map<IEnumerable<QuizResponseDto>>(quizzes);
             return dtos.ToPagedResponse(pagination);
         }
+
     }
 }
