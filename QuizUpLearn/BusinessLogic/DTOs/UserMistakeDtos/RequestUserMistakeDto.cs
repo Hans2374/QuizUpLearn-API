@@ -4,6 +4,7 @@
     {
         public Guid? UserId { get; set; }
         public Guid? QuizId { get; set; }
+        public Guid? UserWeakPointId { get; set; }
         public int TimesAttempted { get; set; } = 0;
         public int TimesWrong { get; set; } = 0;
         public DateTime LastAttemptedAt { get; set; } = DateTime.UtcNow;

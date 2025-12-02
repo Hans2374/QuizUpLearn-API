@@ -42,12 +42,6 @@ namespace Repository.Repositories
             existing.WeakPoint = userWeakPoint.WeakPoint;
             if(userWeakPoint.Advice != null)
                 existing.Advice = userWeakPoint.Advice;
-
-            existing.IsDone = userWeakPoint.IsDone;
-            if(userWeakPoint.CompleteAt != null)
-                existing.CompleteAt = userWeakPoint.CompleteAt;
-            if(userWeakPoint.QuizSetId != null)
-                existing.QuizSetId = userWeakPoint.QuizSetId;
             if(existing.ToeicPart != userWeakPoint.ToeicPart)
                 existing.ToeicPart = userWeakPoint.ToeicPart;
             if(userWeakPoint.DifficultyLevel != null)

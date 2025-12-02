@@ -772,8 +772,7 @@ namespace BusinessLogic.Services
                 foreach (var wp in userWeakPoints.Data)
                 {
                     if(wp.ToeicPart == quiz.TOEICPart
-                        && wp.DifficultyLevel == quizSet.DifficultyLevel
-                        && !wp.IsDone)
+                        && wp.DifficultyLevel == quizSet.DifficultyLevel)
                     {
                         samePartMistakeExists = true;
                         break;
@@ -825,8 +824,7 @@ namespace BusinessLogic.Services
                     WeakPoint = analysisResult.WeakPoint,
                     Advice = analysisResult.Advice,
                     ToeicPart = quiz.TOEICPart,
-                    DifficultyLevel = quizSet.DifficultyLevel,
-                    IsDone = false
+                    DifficultyLevel = quizSet.DifficultyLevel
                 });
             }
 
@@ -840,8 +838,6 @@ namespace BusinessLogic.Services
             List<QuizSetResponseDto> createdQuizSets = new List<QuizSetResponseDto>();
             foreach (var wp in userWeakPoints.Data)
             {
-                if (wp.IsDone) continue;
-                //Each weak point will have 5 questions to practice
                 var newQuizSet = await _quizSetService.CreateQuizSetAsync(new QuizSetRequestDto
                 {
                     Title = $@"This quiz set is mainly to practice for this weak point below: 
@@ -933,9 +929,7 @@ And the weak point should be fix with this advice: {wp.Advice}
                     WeakPoint = wp.WeakPoint,
                     Advice = wp.Advice,
                     ToeicPart = wp.ToeicPart,
-                    DifficultyLevel = wp.DifficultyLevel,
-                    IsDone = true,
-                    CompleteAt = DateTime.UtcNow
+                    DifficultyLevel = wp.DifficultyLevel
                 });
 
                 createdQuizSets.Add(newQuizSet);

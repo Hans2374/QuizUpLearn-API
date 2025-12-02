@@ -1,4 +1,6 @@
-﻿namespace BusinessLogic.DTOs.UserMistakeDtos
+﻿using BusinessLogic.DTOs.QuizDtos;
+
+namespace BusinessLogic.DTOs.UserMistakeDtos
 {
     public class ResponseUserMistakeDto
     {
@@ -10,5 +12,6 @@
         public DateTime LastAttemptedAt { get; set; }
         public bool IsAnalyzed { get; set; }
         public string? UserAnswer { get; set; }
+        public QuizResponseDto? QuizDto { get; set; }
     }
 }

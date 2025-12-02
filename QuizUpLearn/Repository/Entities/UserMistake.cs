@@ -6,6 +6,7 @@ namespace Repository.Entities
     {
         public Guid UserId { get; set; }
         public Guid QuizId { get; set; }
+        public Guid? UserWeakPointId { get; set; }
         public string? UserAnswer { get; set; }
         public int TimesAttempted { get; set; } = 0;
         public int TimesWrong { get; set; } = 0;
@@ -14,5 +15,6 @@ namespace Repository.Entities
         // Navigation property
         public virtual User? User { get; set; }
         public virtual Quiz? Quiz { get; set; }
+        public virtual UserWeakPoint? UserWeakPoint { get; set; }
     }
 }
