@@ -1,8 +1,9 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using BusinessLogic.DTOs;
 using BusinessLogic.DTOs.QuizGroupItemDtos;
 using BusinessLogic.Interfaces;
-using BusinessLogic.DTOs;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using QuizUpLearn.API.Attributes;
 
 namespace QuizUpLearn.API.Controllers
 {
@@ -19,6 +20,7 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpGet]
+        [SubscriptionAndRoleAuthorize("Moderator")]
         public async Task<IActionResult> GetAll([FromQuery] PaginationRequestDto pagination)
         {
             var quizGroupItems = await _quizGroupItemService.GetAllAsync(pagination);
@@ -44,6 +46,7 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpPost]
+        [SubscriptionAndRoleAuthorize("Moderator")]
         public async Task<IActionResult> Create([FromBody] RequestQuizGroupItemDto requestDto)
         {
             var item = await _quizGroupItemService.CreateAsync(requestDto);
@@ -54,6 +57,7 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpPut("{id:guid}")]
+        [SubscriptionAndRoleAuthorize("Moderator")]
         public async Task<IActionResult> Update(Guid id, [FromBody] RequestQuizGroupItemDto requestDto)
         {
             var item = await _quizGroupItemService.UpdateAsync(id, requestDto);
@@ -65,6 +69,7 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpDelete("{id:guid}")]
+        [SubscriptionAndRoleAuthorize("Moderator")]
         public async Task<IActionResult> Delete(Guid id)
         {
             var existingQuizGroupItem = await _quizGroupItemService.GetByIdAsync(id);

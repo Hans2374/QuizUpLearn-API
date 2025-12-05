@@ -17,7 +17,7 @@ namespace QuizUpLearn.API.Attributes
         public string[] AllowedRoles { get; set; } = [];
         public string[] AllowedPermissions { get; set; } = [];
         
-        // Bypass subscription check for certain roles (Admin)
+        // Bypass subscription check for certain roles
         public bool AllowAdminBypass { get; set; } = true;
 
         public SubscriptionAndRoleAuthorizeAttribute(params string[] allowedRoles)

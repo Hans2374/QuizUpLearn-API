@@ -1,11 +1,14 @@
 using BusinessLogic.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using QuizUpLearn.API.Attributes;
 using Repository.Models;
 
 namespace QuizUpLearn.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class MailController : ControllerBase
     {
         private readonly IMailerSendService _mailerSendService;
@@ -18,6 +21,7 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpPost("send")]
+        [SubscriptionAndRoleAuthorize("Moderator", AllowAdminBypass = true)]
         public async Task<IActionResult> Send()
         {
             var fromEmail = _configuration["MailerSend:FromEmail"];

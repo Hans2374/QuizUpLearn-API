@@ -20,7 +20,7 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpGet]
-        [SubscriptionAndRoleAuthorize("Moderator")]
+        [SubscriptionAndRoleAuthorize("Administrator")]
         public async Task<ActionResult<PaginationResponseDto<ResponseSubscriptionDto>>> GetPaged([FromQuery] PaginationRequestDto pagination)
         {
             var result = await _service.GetAllAsync(pagination);
