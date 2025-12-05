@@ -263,6 +263,12 @@ namespace BusinessLogic.Services
                 throw new InvalidOperationException("Attempt not found");
             }
 
+            // Validate AttemptType phải là "mistake_quiz"
+            if (attempt.AttemptType != "mistake_quiz")
+            {
+                throw new InvalidOperationException($"This attempt is not a mistake quiz. AttemptType: {attempt.AttemptType}");
+            }
+
             int correctCount = 0;
             int wrongCount = 0;
             int totalTimeSpent = 0;
@@ -345,12 +351,14 @@ namespace BusinessLogic.Services
                 });
             }
 
-            // Cập nhật QuizAttempt với kết quả
+            // Cập nhật QuizAttempt với kết quả (đảm bảo AttemptType vẫn là "mistake_quiz")
+            attempt.AttemptType = "mistake_quiz"; // Đảm bảo không bị thay đổi thành "placement" hoặc type khác
             attempt.CorrectAnswers = correctCount;
             attempt.WrongAnswers = wrongCount;
             attempt.Score = correctCount;
             attempt.Accuracy = attempt.TotalQuestions > 0 ? (decimal)correctCount / attempt.TotalQuestions : 0;
             attempt.Status = "completed";
+            attempt.IsCompleted = true;
             attempt.TimeSpent = totalTimeSpent > 0 ? totalTimeSpent : (int?)null;
 
             await _attemptRepo.UpdateAsync(dto.AttemptId, attempt);
