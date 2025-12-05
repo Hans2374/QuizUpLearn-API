@@ -1,6 +1,8 @@
 using BusinessLogic.DTOs;
 using BusinessLogic.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using QuizUpLearn.API.Attributes;
 using QuizUpLearn.API.Models;
 using System.Net;
 
@@ -8,6 +10,7 @@ namespace QuizUpLearn.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class QuizAttemptDetailController : ControllerBase
     {
         private readonly IQuizAttemptDetailService _service;
@@ -18,6 +21,7 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpGet]
+        [SubscriptionAndRoleAuthorize("Moderator", AllowAdminBypass = true)]
         public async Task<IActionResult> GetAll([FromQuery] bool isDeleted = false)
         {
             var quizAttemptDetails = await _service.GetAllAsync(isDeleted);

@@ -120,7 +120,7 @@ namespace QuizUpLearn.API.DI
             services.AddSingleton<BusinessLogic.Interfaces.IRealtimeGameService, BusinessLogic.Services.RealtimeGameService>();
             
             // OneVsOneGameService - Singleton để dùng Redis state
-            services.AddSingleton<BusinessLogic.Interfaces.IOneVsOneGameService, BusinessLogic.Services.OneVsOneGameService>();
+            services.AddScoped<BusinessLogic.Interfaces.IOneVsOneGameService, BusinessLogic.Services.OneVsOneGameService>();
             
             // Worker Service
             services.AddSingleton<IWorkerService, WorkerService>();

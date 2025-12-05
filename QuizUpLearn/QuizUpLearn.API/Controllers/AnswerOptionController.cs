@@ -1,11 +1,14 @@
 using BusinessLogic.DTOs;
 using BusinessLogic.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using QuizUpLearn.API.Attributes;
 
 namespace QuizUpLearn.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class AnswerOptionController : ControllerBase
     {
         private readonly IAnswerOptionService _service;
@@ -16,6 +19,7 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpGet]
+        [SubscriptionAndRoleAuthorize("Moderator", AllowAdminBypass = true)]
         public async Task<IActionResult> GetAll([FromQuery] bool isDeleted = false)
         {
             var answerOptions = await _service.GetAllAsync(isDeleted);

@@ -5,6 +5,7 @@ using BusinessLogic.DTOs.TournamentDtos;
 using QuizUpLearn.API.Models;
 using System.Security.Claims;
 using System.IdentityModel.Tokens.Jwt;
+using QuizUpLearn.API.Attributes;
 
 namespace QuizUpLearn.API.Controllers
 {
@@ -152,6 +153,7 @@ namespace QuizUpLearn.API.Controllers
 		}
 
 		[HttpPost("{id:guid}/join")]
+		[SubscriptionAndRoleAuthorize("User", RequirePremiumContent = true)]
 		public async Task<ActionResult<ApiResponse<object>>> Join([FromRoute] Guid id)
 		{
 			try

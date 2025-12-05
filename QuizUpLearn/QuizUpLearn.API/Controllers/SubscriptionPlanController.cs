@@ -9,7 +9,6 @@ namespace QuizUpLearn.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [AllowAnonymous]
     public class SubscriptionPlanController : ControllerBase
     {
         private readonly ISubscriptionPlanService _service;
@@ -19,6 +18,7 @@ namespace QuizUpLearn.API.Controllers
             _service = service;
         }
         [HttpGet]
+        [AllowAnonymous]
         public async Task<ActionResult<PaginationResponseDto<ResponseSubscriptionPlanDto>>> GetPaged([FromQuery] PaginationRequestDto pagination)
         {
             var result = await _service.GetAllAsync(pagination);
@@ -26,6 +26,7 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpGet("{id:guid}")]
+        [AllowAnonymous]
         public async Task<ActionResult<ResponseSubscriptionPlanDto>> GetById(Guid id)
         {
             var result = await _service.GetByIdAsync(id);
@@ -62,6 +63,7 @@ namespace QuizUpLearn.API.Controllers
             return NoContent();
         }
         [HttpGet("free-plan")]
+        [Authorize]
         public async Task<ActionResult<ResponseSubscriptionPlanDto>> GetFreePlan()
         {
             var freePlan = await _service.GetFreeSubscriptionPlanAsync();

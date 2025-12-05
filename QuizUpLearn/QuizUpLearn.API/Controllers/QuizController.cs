@@ -57,6 +57,7 @@ namespace QuizUpLearn.API.Controllers
         /// </summary>
         /// <returns>List of quizzes</returns>
         [HttpGet]
+        [SubscriptionAndRoleAuthorize("Moderator")]
         public async Task<ActionResult<PaginationResponseDto<QuizResponseDto>>> GetAllQuizzes(
             [FromQuery] PaginationRequestDto pagination)
         {
@@ -83,7 +84,7 @@ namespace QuizUpLearn.API.Controllers
         /// </summary>
         /// <returns>List of active quizzes</returns>
         [HttpGet("active")]
-        [ProducesResponseType(StatusCodes.Status200OK)]
+        [SubscriptionAndRoleAuthorize("Moderator")]
         public async Task<ActionResult<PaginationResponseDto<QuizResponseDto>>> GetActiveQuizzes(
             [FromQuery] PaginationRequestDto pagination)
         {
@@ -117,6 +118,7 @@ namespace QuizUpLearn.API.Controllers
         /// <param name="id">Quiz ID</param>
         /// <returns>Success/failure status</returns>
         [HttpDelete("{id}")]
+        [SubscriptionAndRoleAuthorize("Moderator")]
         public async Task<IActionResult> SoftDeleteQuiz(Guid id)
         {
             var result = await _quizService.SoftDeleteQuizAsync(id);
@@ -132,6 +134,7 @@ namespace QuizUpLearn.API.Controllers
         /// <param name="id">Quiz ID</param>
         /// <returns>Success/failure status</returns>
         [HttpDelete("{id}/permanent")]
+        [SubscriptionAndRoleAuthorize("Moderator")]
         public async Task<IActionResult> HardDeleteQuiz(Guid id)
         {
             var result = await _quizService.HardDeleteQuizAsync(id);

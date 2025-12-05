@@ -1,11 +1,14 @@
 using BusinessLogic.DTOs;
 using BusinessLogic.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using QuizUpLearn.API.Attributes;
 
 namespace QuizUpLearn.API.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class UserController : ControllerBase
     {
         private readonly IUserService _service;
@@ -16,6 +19,7 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpGet]
+        [SubscriptionAndRoleAuthorize("Administrator")]
         public async Task<IActionResult> GetAll([FromQuery] bool isDeleted = false)
         {
             var users = await _service.GetAllAsync(isDeleted);
@@ -62,6 +66,7 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpDelete("{id}")]
+        [SubscriptionAndRoleAuthorize("Administrator")]
         public async Task<IActionResult> SoftDelete([FromRoute] Guid id)
         {
             var ok = await _service.SoftDeleteAsync(id);
@@ -70,6 +75,7 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpPost("{id}/restore")]
+        [SubscriptionAndRoleAuthorize("Administrator")]
         public async Task<IActionResult> Restore([FromRoute] Guid id)
         {
             var ok = await _service.RestoreAsync(id);
