@@ -2,6 +2,7 @@ using AutoMapper;
 using BusinessLogic.DTOs.DashboardDtos;
 using BusinessLogic.Interfaces;
 using Microsoft.Extensions.Logging;
+using Repository.Entities;
 using Repository.Interfaces;
 
 namespace BusinessLogic.Services
@@ -64,7 +65,7 @@ namespace BusinessLogic.Services
         {
             try
             {
-                var attempts = (await _quizAttemptRepo.GetByUserIdAsync(userId)).ToList();
+                var attempts = await GetUserAttemptsAsync(userId);
                 var totalQuizzes = attempts.Count;
                 
                 var totalQuestions = attempts.Sum(a => a.TotalQuestions);
@@ -101,7 +102,7 @@ namespace BusinessLogic.Services
         {
             try
             {
-                var attempts = (await _quizAttemptRepo.GetByUserIdAsync(userId)).ToList();
+                var attempts = await GetUserAttemptsAsync(userId);
                 var recentAttempts = attempts
                     .Where(a => a.CreatedAt >= DateTime.UtcNow.AddDays(-days))
                     .OrderBy(a => a.CreatedAt)
@@ -127,9 +128,8 @@ namespace BusinessLogic.Services
                     });
                 }
 
-                var allAttempts = (await _quizAttemptRepo.GetByUserIdAsync(userId)).ToList();
-                var totalQuestions = allAttempts.Sum(a => a.TotalQuestions);
-                var totalCorrect = allAttempts.Sum(a => a.CorrectAnswers);
+                var totalQuestions = attempts.Sum(a => a.TotalQuestions);
+                var totalCorrect = attempts.Sum(a => a.CorrectAnswers);
                 var totalWrong = totalQuestions - totalCorrect;
                 var overallAccuracy = totalQuestions > 0 ? (double)totalCorrect / totalQuestions * 100 : 0;
 
@@ -153,7 +153,7 @@ namespace BusinessLogic.Services
         {
             try
             {
-                var attempts = (await _quizAttemptRepo.GetByUserIdAsync(userId)).ToList();
+                var attempts = await GetUserAttemptsAsync(userId);
                 var recentAttempts = attempts
                     .OrderByDescending(a => a.CreatedAt)
                     .Take(count)
@@ -199,7 +199,7 @@ namespace BusinessLogic.Services
             {
                 // This would typically come from an events/competitions table
                 // For now, returning mock data based on quiz attempts
-                var attempts = (await _quizAttemptRepo.GetByUserIdAsync(userId)).ToList();
+                var attempts = await GetUserAttemptsAsync(userId);
                 var recentAttempts = attempts
                     .OrderByDescending(a => a.CreatedAt)
                     .Take(count)
@@ -238,7 +238,7 @@ namespace BusinessLogic.Services
         {
             try
             {
-                var attempts = (await _quizAttemptRepo.GetByUserIdAsync(userId)).ToList();
+                var attempts = await GetUserAttemptsAsync(userId);
                 var recentAttempts = attempts
                     .OrderByDescending(a => a.CreatedAt)
                     .Take(count)
@@ -279,7 +279,7 @@ namespace BusinessLogic.Services
         {
             try
             {
-                var attempts = (await _quizAttemptRepo.GetByUserIdAsync(userId)).ToList();
+                var attempts = await GetUserAttemptsAsync(userId);
                 var weakTopics = attempts
                     .Where(a => a.Accuracy < 70)
                     .GroupBy(a => a.QuizSetId)
@@ -373,7 +373,7 @@ namespace BusinessLogic.Services
             {
                 // Simplified ranking logic - in real implementation, this would be more complex
                 var allUsers = await _accountRepo.GetAllAsync();
-                var userAttempts = (await _quizAttemptRepo.GetByUserIdAsync(userId)).ToList();
+                var userAttempts = await GetUserAttemptsAsync(userId);
                 var userAverageScore = userAttempts.Any() ? userAttempts.Average(a => a.Accuracy) : 0;
 
                 var userRank = 1;
@@ -381,7 +381,7 @@ namespace BusinessLogic.Services
                 {
                     if (user.Id == userId) continue;
                     
-                    var otherUserAttempts = (await _quizAttemptRepo.GetByUserIdAsync(user.Id)).ToList();
+                    var otherUserAttempts = await GetUserAttemptsAsync(user.Id);
                     var otherUserAverageScore = otherUserAttempts.Any() ? otherUserAttempts.Average(a => a.Accuracy) : 0;
                     
                     if (otherUserAverageScore > userAverageScore)
@@ -396,6 +396,19 @@ namespace BusinessLogic.Services
             {
                 _logger.LogError(ex, "Error calculating user rank for user {UserId}", userId);
                 return 999; // Default rank if calculation fails
+            }
+        }
+        private async Task<List<QuizAttempt>> GetUserAttemptsAsync(Guid userId)
+        {
+            try
+            {
+                var attempts = await _quizAttemptRepo.GetByUserIdAsync(userId);
+                return attempts?.ToList() ?? new List<QuizAttempt>();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error loading attempts for user {UserId}", userId);
+                return new List<QuizAttempt>();
             }
         }
     }

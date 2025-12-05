@@ -252,12 +252,11 @@ namespace QuizUpLearn.API.Controllers
 
         private Guid GetCurrentUserId()
         {
-            var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
-            if (Guid.TryParse(userIdClaim, out var userId))
-            {
-                return userId;
-            }
-            return Guid.Empty;
+            // Ưu tiên claim "userId" (User entity), fallback NameIdentifier/Sub (Account)
+            var userIdClaim = User.FindFirst("userId")?.Value
+                              ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            return Guid.TryParse(userIdClaim, out var userId) ? userId : Guid.Empty;
         }
     }
 
