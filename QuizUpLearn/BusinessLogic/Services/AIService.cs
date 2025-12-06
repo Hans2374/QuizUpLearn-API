@@ -765,7 +765,7 @@ namespace BusinessLogic.Services
         {
             var userMistakes = await _userMistakeService.GetAllByUserIdAsync(userId, null!);
 
-            var data = userMistakes.Data.Where(um => !um.IsAnalyzed).ToList();
+            var data = userMistakes.Data.ToList();
 
             int retryCount = 0;
 
