@@ -204,17 +204,10 @@ namespace QuizUpLearn.API.Controllers
             return Ok(new { JobId = jobId, Message = "Quiz set generation started in background.", Status = "Processing", QuizSetId = quizSetId });
         }
 
-        /// <summary>
-        /// This endpoint analyzes a user's mistakes and provides personalized advices & weak points.
-        /// Admins and Teachers can analyze any user, others can only analyze themselves.
-        /// </summary>
-        /// <param name="targetUserId"></param>
-        /// <returns></returns>
         [HttpPost("ai-analyze-user-mistakes")]
         [SubscriptionAndRoleAuthorize("Moderator", "User", RequireAiFeatures = true)]
         public async Task<IActionResult> AnalyzeUserMistakesAndAdvise()
         {
-            // Get authenticated user ID from HttpContext
             var userId = (Guid)HttpContext.Items["UserId"]!;
 
             var result = await _aiService.AnalyzeUserMistakesAndAdviseAsync(userId);
