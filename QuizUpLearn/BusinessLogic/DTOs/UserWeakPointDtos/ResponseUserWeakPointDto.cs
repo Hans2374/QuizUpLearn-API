@@ -6,7 +6,7 @@ namespace BusinessLogic.DTOs.UserWeakPointDtos
     {
         public Guid Id { get; set; }
         public Guid UserId { get; set; }
-        public Guid UserMistakeId { get; set; }
+        public Guid? UserMistakeId { get; set; }
         public string WeakPoint { get; set; } = string.Empty;
         public string? ToeicPart { get; set; }
         public string? DifficultyLevel { get; set; }
