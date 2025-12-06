@@ -3,7 +3,6 @@
     public class RequestUserWeakPointDto
     {
         public Guid UserId { get; set; }
-        public Guid? UserMistakeId { get; set; }
         public required string WeakPoint { get; set; }
         public required string ToeicPart { get; set; }
         public string? DifficultyLevel { get; set; }

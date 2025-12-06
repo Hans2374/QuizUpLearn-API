@@ -68,13 +68,14 @@ namespace BusinessLogic.Services
 
         public async Task<PaginationResponseDto<QuizResponseDto>> GetMistakeQuizzesByUserId(Guid userId, PaginationRequestDto pagination)
         {
-            // Cleanup WeakPoint orphan (không còn UserMistake liên quan)
             await CleanupOrphanWeakPointsAsync(userId);
+            
+            await CleanUpOrphanMistakeAysnc(userId);
 
             var userMistakes = await _repo.GetAlByUserIdAsync(userId);
-
+            
             var quizzes = userMistakes
-                .Where(um => um.Quiz != null && um.UserWeakPoint != null)
+                .Where(um => um.Quiz != null)
                 .Select(um => um.Quiz)
                 .Distinct()
                 .ToList();
@@ -83,9 +84,6 @@ namespace BusinessLogic.Services
             return dtos.ToPagedResponse(pagination);
         }
 
-        /// <summary>
-        /// Cleanup các UserWeakPoint orphan (không còn UserMistake nào liên quan)
-        /// </summary>
         public async Task CleanupOrphanWeakPointsAsync(Guid userId)
         {
             try
@@ -131,5 +129,20 @@ namespace BusinessLogic.Services
             }
         }
 
+        public async Task CleanUpOrphanMistakeAysnc(Guid userId)
+        {
+            var userMistakes = await _repo.GetAlByUserIdAsync(userId);
+            foreach (var mistake in userMistakes)
+            {
+                if (mistake.Quiz == null)
+                {
+                    await _repo.DeleteAsync(mistake.Id);
+                }
+            }
+        }
+
+        public async Task<IEnumerable<ResponseUserMistakeDto>> GetAllByUserIdAsync(Guid userId)
+        {
+            return _mapper.Map<IEnumerable<ResponseUserMistakeDto>>(await _repo.GetAlByUserIdAsync(userId));        }
     }
 }

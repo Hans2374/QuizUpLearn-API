@@ -10,7 +10,7 @@ namespace BusinessLogic.DTOs.AiDtos
         public required string Topic { get; set; }
         public Guid? CreatorId { get; set; }
     }
-    public class AiGenerateQuizResponseDto
+    public class AiGenerateResponseDto
     {
         public string? Passage { get; set; }
         public string? AudioScript { get; set; }
@@ -18,6 +18,8 @@ namespace BusinessLogic.DTOs.AiDtos
         public string? QuestionText { get; set; }
         public List<AiGenerateAnswerOptionResponseDto>? AnswerOptions { get; set; }
         public List<ConversationLineDto>? AudioScripts { get; set; }
+        public string? WeakPoint { get; set; }
+        public string? Advice { get; set; }
     }
     public class AiGenerateAnswerOptionResponseDto
     {
@@ -35,10 +37,5 @@ namespace BusinessLogic.DTOs.AiDtos
         [JsonConverter(typeof(JsonStringEnumConverter))]
         public VoiceRoles Role { get; set; }
         public string Text { get; set; }
-    }
-    public class AiAnalyzeWeakpointResponseDto
-    {
-        public string WeakPoint { get; set; }
-        public string Advice { get; set; }
     }
 }
