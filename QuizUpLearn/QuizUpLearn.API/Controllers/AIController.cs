@@ -210,8 +210,8 @@ namespace QuizUpLearn.API.Controllers
         {
             var userId = (Guid)HttpContext.Items["UserId"]!;
 
-            var result = await _aiService.AnalyzeUserMistakesAndAdviseAsync(userId);
-            return Ok(result);
+            await _aiService.AnalyzeUserMistakesAndAdviseAsync(userId);
+            return Ok();
         }
         /*[HttpPost("generate-fix-weakpoint-quiz-set")]
         [SubscriptionAndRoleAuthorize("Moderator", "User", RequireAiFeatures = true, CheckRemainingUsage = true, RequirePremiumContent = true)]
