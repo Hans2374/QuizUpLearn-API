@@ -30,19 +30,35 @@ namespace BusinessLogic.Services
 			_userRepo = userRepo;
 		}
 
-		public async Task<TournamentResponseDto> CreateAsync(CreateTournamentRequestDto dto)
+	public async Task<TournamentResponseDto> CreateAsync(CreateTournamentRequestDto dto)
+	{
+		if (dto.StartDate.Kind != DateTimeKind.Utc) dto.StartDate = DateTime.SpecifyKind(dto.StartDate, DateTimeKind.Utc);
+		if (dto.EndDate.Kind != DateTimeKind.Utc) dto.EndDate = DateTime.SpecifyKind(dto.EndDate, DateTimeKind.Utc);
+
+		// Validate dates are not in the past
+		var today = DateTime.UtcNow.Date;
+		if (dto.StartDate.Date < today)
 		{
-			if (dto.StartDate.Kind != DateTimeKind.Utc) dto.StartDate = DateTime.SpecifyKind(dto.StartDate, DateTimeKind.Utc);
-			if (dto.EndDate.Kind != DateTimeKind.Utc) dto.EndDate = DateTime.SpecifyKind(dto.EndDate, DateTimeKind.Utc);
+			throw new ArgumentException("Không thể tạo giải đấu với ngày bắt đầu trong quá khứ.");
+		}
+		
+		if (dto.EndDate.Date < today)
+		{
+			throw new ArgumentException("Không thể tạo giải đấu với ngày kết thúc trong quá khứ.");
+		}
+		
+		if (dto.StartDate.Date > dto.EndDate.Date)
+		{
+			throw new ArgumentException("Ngày bắt đầu phải trước ngày kết thúc.");
+		}
 
-			// Kiểm tra nếu đã có tournament "Started" trong tháng thì không cho tạo mới
-			var startDate = dto.StartDate.Date;
-			if (await _tournamentRepo.ExistsStartedInMonthAsync(startDate.Year, startDate.Month))
-			{
-				throw new ArgumentException($"Đã tồn tại tournament đang 'Started' trong tháng {startDate.Month}/{startDate.Year}. Không thể tạo tournament mới khi đã có tournament đang chạy.");
-			}
-
-			var entity = new Tournament
+		// Kiểm tra nếu đã có tournament "Started" trong tháng thì không cho tạo mới
+		// Use EndDate to determine the target month, as StartDate might shift to previous month due to timezone (e.g. 00:00 Local -> 17:00 Prev Day UTC)
+		var checkDate = dto.EndDate.Date;
+		if (await _tournamentRepo.ExistsStartedInMonthAsync(checkDate.Year, checkDate.Month))
+		{
+			throw new ArgumentException($"Đã tồn tại tournament đang 'Started' trong tháng {checkDate.Month}/{checkDate.Year}. Không thể tạo tournament mới khi đã có tournament đang chạy.");
+		}			var entity = new Tournament
 			{
 				Name = dto.Name,
 				Description = dto.Description,
@@ -220,32 +236,49 @@ namespace BusinessLogic.Services
 				throw new ArgumentException($"Các quiz set sau không phải loại Tournament hoặc không tồn tại: {string.Join(", ", invalidIds)}");
 			}
 
-			if (!validIds.Any())
+		if (!validIds.Any())
+		{
+			throw new ArgumentException("Không có quiz set hợp lệ để thêm vào tournament");
+		}
+
+		var startDate = tournament.StartDate.Date;
+		var endDate = tournament.EndDate.Date;
+		var today = DateTime.UtcNow.Date;
+		
+		// Determine effective start date
+		var effectiveStartDate = startDate;
+		
+		// Fix for timezone shift: If startDate is in the previous month of endDate, bump it to 1st of endDate's month.
+		// This handles cases where 00:00 Local becomes 17:00 Previous Day UTC (e.g., Jan 1 00:00 Local -> Dec 31 17:00 UTC)
+		if (effectiveStartDate.Month != endDate.Month || effectiveStartDate.Year != endDate.Year)
+		{
+			var firstDayOfEndMonth = new DateTime(endDate.Year, endDate.Month, 1);
+			if (effectiveStartDate < firstDayOfEndMonth) effectiveStartDate = firstDayOfEndMonth;
+		}
+		
+		// For current month tournaments, use today as the effective start if startDate is in the past
+		if (effectiveStartDate < today && effectiveStartDate.Month == endDate.Month && effectiveStartDate.Year == endDate.Year)
+		{
+			effectiveStartDate = today;
+		}
+		
+		// Calculate days from effective start date to end date
+		var days = (int)(endDate - effectiveStartDate).TotalDays + 1;
+
+		if (days <= 0)
+		{
+			throw new ArgumentException("Không còn ngày nào trong tháng để thêm quiz set");
+		}
+
+		if (validIds.Count != days)
+		{
+			if (validIds.Count > days)
 			{
-				throw new ArgumentException("Không có quiz set hợp lệ để thêm vào tournament");
+				throw new ArgumentException($"Chỉ có thể thêm được tối đa {days} quiz set(s) (số ngày còn lại trong tháng từ {effectiveStartDate:dd/MM/yyyy} đến cuối tháng). Bạn đang cố thêm {validIds.Count} quiz set(s).");
 			}
 
-			var startDate = tournament.StartDate.Date;
-			var daysInMonth = DateTime.DaysInMonth(startDate.Year, startDate.Month);
-			// Tính số ngày từ StartDate đến cuối tháng (bao gồm cả ngày StartDate)
-			var days = daysInMonth - startDate.Day + 1;
-
-			if (days <= 0)
-			{
-				throw new ArgumentException("Không còn ngày nào trong tháng để thêm quiz set");
-			}
-
-			if (validIds.Count != days)
-			{
-				if (validIds.Count > days)
-				{
-					throw new ArgumentException($"Chỉ có thể thêm được tối đa {days} quiz set(s) (số ngày còn lại trong tháng từ ngày tạo tournament đến cuối tháng). Bạn đang cố thêm {validIds.Count} quiz set(s).");
-				}
-
-				throw new ArgumentException($"Cần truyền đúng {days} quiz set(s) tương ứng số ngày còn lại trong tháng (từ ngày tạo tournament đến cuối tháng). Bạn hiện chỉ truyền {validIds.Count} quiz set(s).");
-			}
-
-			var rnd = new Random();
+			throw new ArgumentException($"Cần truyền đúng {days} quiz set(s) tương ứng số ngày còn lại trong tháng (từ {effectiveStartDate:dd/MM/yyyy} đến cuối tháng). Bạn hiện chỉ truyền {validIds.Count} quiz set(s).");
+		}			var rnd = new Random();
 			return validIds.OrderBy(_ => rnd.Next()).ToList();
 		}
 
@@ -314,9 +347,39 @@ namespace BusinessLogic.Services
 				return new List<TournamentLeaderboardItemDto>();
 			}
 
-			// Lấy tất cả quiz sets của tournament
-			var tournamentQuizSets = await _tournamentQuizSetRepo.GetByTournamentAsync(tournamentId);
-			var quizSetIds = tournamentQuizSets.Select(tqs => tqs.QuizSetId).ToList();
+			// Lấy tất cả quiz sets của tournament (bao gồm cả đã bị soft delete để tính điểm từ quiz attempts cũ)
+			var tournamentQuizSets = await _tournamentQuizSetRepo.GetAllByTournamentAsync(tournamentId, includeDeleted: true);
+			var quizSetIds = tournamentQuizSets.Select(tqs => tqs.QuizSetId).Distinct().ToList();
+
+			// Khai báo result ở đây để dùng cho cả 2 trường hợp
+			var result = new List<TournamentLeaderboardItemDto>();
+
+			if (!quizSetIds.Any())
+			{
+				// Nếu không có quiz set nào, trả về leaderboard với điểm 0 cho tất cả participants
+				foreach (var participant in participantList)
+				{
+					var user = await _userRepo.GetByIdAsync(participant.ParticipantId);
+					if (user == null) continue;
+
+					result.Add(new TournamentLeaderboardItemDto
+					{
+						UserId = participant.ParticipantId,
+						Username = user.Username,
+						FullName = user.FullName,
+						AvatarUrl = user.AvatarUrl,
+						Score = 0,
+						Date = participant.JoinAt
+					});
+				}
+
+				for (int i = 0; i < result.Count; i++)
+				{
+					result[i].Rank = i + 1;
+				}
+
+				return result;
+			}
 
 			// Lấy tất cả quiz attempts của các quiz set trong tournament (chỉ completed)
 			var allAttempts = new List<Repository.Entities.QuizAttempt>();
@@ -338,7 +401,6 @@ namespace BusinessLogic.Services
 				.ToDictionary(x => x.UserId, x => x.TotalScore);
 
 			// Tạo leaderboard items từ participants
-			var result = new List<TournamentLeaderboardItemDto>();
 			foreach (var participant in participantList)
 			{
 				var user = await _userRepo.GetByIdAsync(participant.ParticipantId);
