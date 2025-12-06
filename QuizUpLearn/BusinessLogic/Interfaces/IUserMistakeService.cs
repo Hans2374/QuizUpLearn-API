@@ -14,7 +14,6 @@ namespace BusinessLogic.Interfaces
         Task UpdateAsync(Guid id, RequestUserMistakeDto requestDto);
         Task DeleteAsync(Guid id);
         Task CleanupOrphanWeakPointsAsync(Guid userId);
-        Task CleanUpOrphanMistakeAysnc(Guid userId);
         Task<IEnumerable<ResponseUserMistakeDto>> GetAllByUserIdAsync(Guid userId);
     }
 }

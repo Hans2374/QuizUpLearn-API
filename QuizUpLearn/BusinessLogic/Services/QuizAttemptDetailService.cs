@@ -627,7 +627,7 @@ namespace BusinessLogic.Services
                     {
                         using var scope = _scopeFactory.CreateScope();
                         var aiService = scope.ServiceProvider.GetRequiredService<IAIService>();
-                        //await aiService.AnalyzeUserMistakesAndAdviseAsync(userId);
+                        await aiService.AnalyzeUserMistakesAndAdviseAsync(userId);
                     }
                 }
                 catch (Exception ex)

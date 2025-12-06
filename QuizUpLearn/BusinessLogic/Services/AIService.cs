@@ -766,7 +766,7 @@ namespace BusinessLogic.Services
             return true;
         }
         
-        public async Task<PaginationResponseDto<ResponseUserWeakPointDto>> AnalyzeUserMistakesAndAdviseAsync(Guid userId)
+        public async Task AnalyzeUserMistakesAndAdviseAsync(Guid userId)
         {
             var userMistakes = await _userMistakeService.GetAllByUserIdAsync(userId);
 
@@ -845,8 +845,6 @@ namespace BusinessLogic.Services
                     ToeicPart = $"PART{i}"
                 });
             }
-
-            return await _userWeakPointService.GetByUserIdAsync(userId, null!);
         }
 
         public async Task<PaginationResponseDto<QuizSetResponseDto>> GenerateFixWeakPointQuizSetAsync(Guid userId)
