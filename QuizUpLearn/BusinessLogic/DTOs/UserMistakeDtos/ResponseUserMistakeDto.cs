@@ -16,7 +16,7 @@ namespace BusinessLogic.DTOs.UserMistakeDtos
         public DateTime? UpdatedAt { get; set; }
         public bool IsAnalyzed { get; set; }
         public string? UserAnswer { get; set; }
-        public QuizResponseDto? QuizDto { get; set; }
+        public QuizResponseDto? Quiz { get; set; }
         public virtual UserWeakPoint? UserWeakPoint { get; set; }
     }
 }

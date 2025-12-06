@@ -55,13 +55,6 @@ namespace Repository.DBContext
                 .WithMany(q => q.QuizAttemptDetails)
                 .HasForeignKey(qad => qad.QuizId)
                 .OnDelete(DeleteBehavior.Cascade);
-
-            modelBuilder.Entity<UserMistake>()
-                .HasOne(um => um.UserWeakPoint)
-                .WithOne(uwp => uwp.UserMistake)
-                .HasForeignKey<UserWeakPoint>(uwp => uwp.UserMistakeId)
-                .IsRequired(false)
-                .OnDelete(DeleteBehavior.Cascade);
         }
     }
 }

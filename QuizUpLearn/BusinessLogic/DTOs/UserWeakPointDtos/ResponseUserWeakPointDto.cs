@@ -14,5 +14,6 @@ namespace BusinessLogic.DTOs.UserWeakPointDtos
         public DateTime CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }
         public ResponseUserMistakeDto? UserMistakeDto { get; set; }
+        public List<ResponseUserMistakeDto>? UserMistakes { get; set; }
     }
 }

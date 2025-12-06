@@ -19,6 +19,7 @@ namespace BusinessLogic.Helpers
         public const string IMAGE = "ImageGeneration";
         public const string PASSAGE = "PassageGeneration";
         public const string CONVERSATION_AUDIO = "ConversationAudioGeneration";
+        public const string ANALYZE_MISTAKE = "AnalyzeMistakeGeneration";
     }
     public class PromptGenerateQuizSetHelper
     {
@@ -325,30 +326,42 @@ Return JSON:
 }}
 ";
         }
-        public string GetAnalyzeMistakePrompt(
-            QuizSetResponseDto quizSet
+        public string GetAnalyzeMistakeQuizPrompt(
+            int index
+            , QuizSetResponseDto quizSet
             , QuizResponseDto quiz
             , string answersText
             , ResponseUserMistakeDto mistake)
         {
             return $@"
-You are an expert TOEIC tutor.
-This is a TOEIC practice quiz with the following details:
-Topic: {quizSet.Title}
-TOIEC part: {quiz.TOEICPart}
-Point range: {quizSet.DifficultyLevel}
-Question: {quiz.QuestionText}
-Answer options : {answersText}
-User's wrong answer (maybe user not answer): {mistake.UserAnswer}
+Quiz number {index}:
+Topic: ""{quizSet.Title}""
+TOIEC part: ""{quiz.TOEICPart}""
+Point range: ""{quizSet.DifficultyLevel}""
 
-Generate ONE single weakpoint(weak area of skill) out of this question and ONE single advice for the user how to improve in this area.
+
+Additional materials context (if any):
+Passage : ""{quizSet.QuizGroupItems.FirstOrDefault(qgi => qgi.Id == quiz.QuizGroupItemId)?.PassageText}""
+Audio Script : ""{quizSet.QuizGroupItems.FirstOrDefault(qgi => qgi.Id == quiz.QuizGroupItemId)?.AudioScript}""
+Image Description : ""{quizSet.QuizGroupItems.FirstOrDefault(qgi => qgi.Id == quiz.QuizGroupItemId)?.ImageDescription}""
+
+Question: ""{quiz.QuestionText}""
+Answer options : ""{answersText}""
+
+User's wrong answer (maybe user not answer): ""{mistake.UserAnswer}""
+";
+        }
+        public string GetAnalyzeMistakeGeneratePrompt()
+        {
+            return $@"
+You are an expert TOEIC tutor.
+Generate ONE single weakpoint out of these questions and ONE single advice for the user how to improve in this area.
 
 Return in JSON:
 {{
   ""WeakPoint"": ""..."",
   ""Advice"": ""...""
-}}
-";
+}}";
         }
         public string GetFixWeakPointPrompt()
         {
