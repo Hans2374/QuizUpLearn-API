@@ -85,7 +85,7 @@ namespace QuizUpLearn.API.Controllers
                     return BadRequest("Invalid quiz set type.");
             }
             //Check if user has enough remaining usage
-            if(inputData.QuestionQuantity > remainingUsage && (!isAdmin || !isMod))
+            if(inputData.QuestionQuantity > remainingUsage && (!isAdmin && !isMod))
             {
                 return BadRequest("Insufficient remaining usage to generate the requested number of questions.");
             }
@@ -94,7 +94,6 @@ namespace QuizUpLearn.API.Controllers
 
             inputData.CreatorId = userId;
 
-            // Create a new quiz set first to hold the generated quizzes
             var jobId = Guid.NewGuid();
             var createdQuizSet = await _quizSetService.CreateQuizSetAsync(new QuizSetRequestDto
             {
@@ -107,7 +106,6 @@ namespace QuizUpLearn.API.Controllers
             });
             var quizSetId = createdQuizSet.Id;
 
-            // Register this job as active for the user
             _workerService.RegisterActiveJob(userId, jobId, quizSetId);
 
             _ = _workerService.EnqueueJob(async (sp, token) =>
