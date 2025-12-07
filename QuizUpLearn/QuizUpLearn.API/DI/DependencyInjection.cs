@@ -83,6 +83,7 @@ namespace QuizUpLearn.API.DI
             services.AddScoped<IEventRepo, EventRepo>();
             services.AddScoped<IEventParticipantRepo, EventParticipantRepo>();
             services.AddScoped<IAppSettingRepo, AppSettingRepo>();
+            services.AddScoped<IAdminDashboardRepo, AdminDashboardRepo>();
         }
 
         public static void AddServices(this IServiceCollection services)
@@ -115,6 +116,7 @@ namespace QuizUpLearn.API.DI
             services.AddScoped<IEventService, EventService>();
             services.AddScoped<ISubscriptionUsageService, SubscriptionUsageService>();
             services.AddScoped<IAppSettingService, AppSettingService>();
+            services.AddScoped<IAdminDashboardService, AdminDashboardService>();
 
             // RealtimeGameService - Singleton để dùng Redis state
             services.AddSingleton<BusinessLogic.Interfaces.IRealtimeGameService, BusinessLogic.Services.RealtimeGameService>();
