@@ -5,8 +5,9 @@ namespace BusinessLogic.DTOs.AiDtos
 {
     public class AiGenerateQuizSetRequestDto
     {
+        public required Guid GrammarId { get; set; }
+        public required Guid VocabularyId { get; set; }
         public int QuestionQuantity { get; set; }
-        public required string Difficulty { get; set; }
         public required string Topic { get; set; }
         public Guid? CreatorId { get; set; }
     }

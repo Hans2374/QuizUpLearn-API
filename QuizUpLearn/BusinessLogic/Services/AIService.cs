@@ -31,6 +31,8 @@ namespace BusinessLogic.Services
         private readonly IUserMistakeService _userMistakeService;
         private readonly IUserWeakPointService _userWeakPointService;
         private readonly IQuizQuizSetService _quizQuizSetService;
+        private readonly IGrammarService _grammarService;
+        private readonly IVocabularyService _vocabularyService;
         //API keys
         private readonly string _geminiApiKey;
         private readonly string _openRouterApiKey;
@@ -42,7 +44,7 @@ namespace BusinessLogic.Services
         private readonly string _narratorVoiceId;
         //Helpers
         private readonly PromptGenerateQuizSetHelper _promptGenerator;
-        public AIService(HttpClient httpClient, IConfiguration configuration, IQuizSetService quizSetService, IQuizService quizService, IAnswerOptionService answerOptionService, IUploadService uploadService, ILogger<AIService> logger, IQuizGroupItemService quizGroupItemService, IUserMistakeService userMistakeService, IUserWeakPointService userWeakPointService, IQuizQuizSetService quizQuizSetService)
+        public AIService(HttpClient httpClient, IConfiguration configuration, IQuizSetService quizSetService, IQuizService quizService, IAnswerOptionService answerOptionService, IUploadService uploadService, ILogger<AIService> logger, IQuizGroupItemService quizGroupItemService, IUserMistakeService userMistakeService, IUserWeakPointService userWeakPointService, IQuizQuizSetService quizQuizSetService, IGrammarService grammarService, IVocabularyService vocabularyService)
         {
             _httpClient = httpClient;
             _quizSetService = quizSetService;
@@ -54,6 +56,8 @@ namespace BusinessLogic.Services
             _userMistakeService = userMistakeService;
             _userWeakPointService = userWeakPointService;
             _quizQuizSetService = quizQuizSetService;
+            _grammarService = grammarService;
+            _vocabularyService = vocabularyService;
 
             //API keys
             _geminiApiKey = configuration["Gemini:ApiKey"] ?? throw new ArgumentNullException("Gemini API key is not configured.");
@@ -67,7 +71,6 @@ namespace BusinessLogic.Services
             _narratorVoiceId = configuration["AsyncTTS:Voices:Narrator"] ?? throw new ArgumentNullException("Narrator voice id is not configured");
 
             _promptGenerator = new PromptGenerateQuizSetHelper();
-            
         }
 
         private async Task<string> GeminiGenerateContentAsync(string prompt)
@@ -376,7 +379,7 @@ namespace BusinessLogic.Services
             return result.Url;
         }
 
-        private async Task<QuizResponseDto> CreateQuizWithOptionsAsync(Guid quizSetId, string part, string questionText, List<AiGenerateAnswerOptionResponseDto> options, bool isAssignOptionText = true, Guid? groupItemId = null, string? audioUrl = null, string? imageUrl = null)
+        private async Task<QuizResponseDto> CreateQuizWithOptionsAsync(Guid quizSetId, Guid grammarId, Guid vocabId , string part, string questionText, List<AiGenerateAnswerOptionResponseDto> options, bool isAssignOptionText = true, Guid? groupItemId = null, string? audioUrl = null, string? imageUrl = null)
         {
             var quiz = await _quizService.CreateQuizAsync(new QuizRequestDto
             {
@@ -385,6 +388,8 @@ namespace BusinessLogic.Services
                 QuizGroupItemId = groupItemId,
                 AudioURL = audioUrl,
                 ImageURL = imageUrl,
+                GrammarId = grammarId,
+                VocabularyId = vocabId
             });
             
             await _quizQuizSetService.CreateAsync(new RequestQuizQuizSetDto
@@ -439,9 +444,12 @@ namespace BusinessLogic.Services
             var groupPassage = string.Empty;
             var groupAudioScript = string.Empty;
             var groupImageDescription = string.Empty;
-
+            
             foreach (var quiz in quizzes.Data)
             {
+                var keyword = quiz.Vocabulary.KeyWord;
+                var grammar = quiz.Grammar.Name;
+
                 try
                 {
                     if (quiz.QuizGroupItemId != null)
@@ -456,7 +464,7 @@ namespace BusinessLogic.Services
                     }
                     var options = await _answerOptionService.GetByQuizIdAsync(quiz.Id);
 
-                    var validationPrompt = _promptGenerator.GetValidationPromptAsync(quizSet, quiz, quiz.AnswerOptions, groupPassage, groupAudioScript, groupImageDescription);
+                    var validationPrompt = _promptGenerator.GetValidationPromptAsync(quizSet, quiz, quiz.AnswerOptions, groupPassage, groupAudioScript, groupImageDescription, grammar, keyword);
                     var response = await OpenRouterGenerateContentAsync(validationPrompt);
 
                     var validation = JsonSerializer.Deserialize<AiValidationResponseDto>(response ?? string.Empty);
@@ -488,12 +496,19 @@ namespace BusinessLogic.Services
         
         public async Task<bool> GeneratePracticeQuizSetPart1Async(AiGenerateQuizSetRequestDto inputData, Guid quizSetId)
         {
+            // Fetch Grammar and Vocabulary objects using their IDs
+            var grammar = await _grammarService.GetByIdAsync(inputData.GrammarId);
+            var vocabulary = await _vocabularyService.GetByIdAsync(inputData.VocabularyId);
+            
+            if (grammar == null || vocabulary == null)
+                throw new ArgumentException("Grammar or Vocabulary not found");
+
             string previousImageDescription = string.Empty;
             string previousQuestionText = string.Empty;
 
             for (int i = 0; i < inputData.QuestionQuantity; i++)
             {
-                var prompt = _promptGenerator.GetQuizSetPart1Prompt(inputData, previousImageDescription, previousQuestionText);
+                var prompt = _promptGenerator.GetQuizSetPart1Prompt(inputData, previousImageDescription, previousQuestionText, vocabulary.KeyWord, grammar.Name);
                 List<string> purposes = new() { GenerationPurpose.QUIZ, GenerationPurpose.IMAGE };
                 AiGenerateResponseDto quiz = await GenerateWithRetryAsync(purposes, prompt, quizSetId);
 
@@ -511,6 +526,8 @@ namespace BusinessLogic.Services
                 }
 
                 var createdQuiz = await CreateQuizWithOptionsAsync(quizSetId
+                    , inputData.GrammarId
+                    , inputData.VocabularyId
                     , QuizPartEnum.PART1.ToString()
                     , ""
                     , quiz.AnswerOptions
@@ -528,10 +545,17 @@ namespace BusinessLogic.Services
         
         public async Task<bool> GeneratePracticeQuizSetPart2Async(AiGenerateQuizSetRequestDto inputData, Guid quizSetId)
         {
+            // Fetch Grammar and Vocabulary objects using their IDs
+            var grammar = await _grammarService.GetByIdAsync(inputData.GrammarId);
+            var vocabulary = await _vocabularyService.GetByIdAsync(inputData.VocabularyId);
+            
+            if (grammar == null || vocabulary == null)
+                throw new ArgumentException("Grammar or Vocabulary not found");
+
             string previousQuestionText = string.Empty;
             for (int i = 0; i < inputData.QuestionQuantity; i++)
             {
-                var prompt = _promptGenerator.GetQuizSetPart2Prompt(inputData, previousQuestionText);
+                var prompt = _promptGenerator.GetQuizSetPart2Prompt(inputData, previousQuestionText, vocabulary.KeyWord, grammar.Name);
                 List<string> purposes = new() { GenerationPurpose.QUIZ };
                 AiGenerateResponseDto quiz = await GenerateWithRetryAsync(purposes, prompt, quizSetId);
                 
@@ -547,6 +571,8 @@ namespace BusinessLogic.Services
                 }
 
                 var createdQuiz = await CreateQuizWithOptionsAsync(quizSetId
+                    , inputData.GrammarId
+                    , inputData.VocabularyId
                     , QuizPartEnum.PART2.ToString()
                     , ""
                     , quiz.AnswerOptions
@@ -561,11 +587,18 @@ namespace BusinessLogic.Services
         
         public async Task<bool> GeneratePracticeQuizSetPart3Async(AiGenerateQuizSetRequestDto inputData, Guid quizSetId)
         {
+            // Fetch Grammar and Vocabulary objects using their IDs
+            var grammar = await _grammarService.GetByIdAsync(inputData.GrammarId);
+            var vocabulary = await _vocabularyService.GetByIdAsync(inputData.VocabularyId);
+
+            if (grammar == null || vocabulary == null)
+                throw new ArgumentException("Grammar or Vocabulary not found");
+
             var previousAudioScript = string.Empty;
 
             for (int i = 0; i < inputData.QuestionQuantity; i += 3)
             {
-                var audioPrompt = _promptGenerator.GetPart3AudioPrompt(inputData, previousAudioScript);
+                var audioPrompt = _promptGenerator.GetPart3AudioPrompt(inputData, previousAudioScript, vocabulary.KeyWord, grammar.Name);
                 List<string> purposes = new() { GenerationPurpose.CONVERSATION_AUDIO };
 
                 AiGenerateResponseDto conversationScripts = await GenerateWithRetryAsync(purposes, audioPrompt, quizSetId);
@@ -586,12 +619,18 @@ namespace BusinessLogic.Services
 
                 for (int j = 0; j < 3 && i + j < inputData.QuestionQuantity; j++)
                 {
-                    var quizPrompt = _promptGenerator.GetPart3QuizPrompt(audioConversationScripts, previousQuizText);
+                    var quizPrompt = _promptGenerator.GetPart3QuizPrompt(
+                        audioConversationScripts, 
+                        previousQuizText, 
+                        vocabulary.KeyWord, 
+                        grammar.Name);
                     List<string> quizPurpose = new() { GenerationPurpose.QUIZ };
                     AiGenerateResponseDto quiz = await GenerateWithRetryAsync(quizPurpose, quizPrompt, quizSetId);
 
                     previousQuizText += quiz.QuestionText + ", ";
                     var createdQuiz = await CreateQuizWithOptionsAsync(quizSetId
+                        , grammar.Id
+                        , vocabulary.Id
                         , QuizPartEnum.PART3.ToString()
                         , quiz.QuestionText
                         , quiz.AnswerOptions
@@ -603,11 +642,18 @@ namespace BusinessLogic.Services
         
         public async Task<bool> GeneratePracticeQuizSetPart4Async(AiGenerateQuizSetRequestDto inputData, Guid quizSetId)
         {
+            // Fetch Grammar and Vocabulary objects using their IDs
+            var grammar = await _grammarService.GetByIdAsync(inputData.GrammarId);
+            var vocabulary = await _vocabularyService.GetByIdAsync(inputData.VocabularyId);
+
+            if (grammar == null || vocabulary == null)
+                throw new ArgumentException("Grammar or Vocabulary not found");
+
             string previousAudioScript = string.Empty;
             
             for (int i = 0; i < inputData.QuestionQuantity; i += 3)
             {
-                var audioPrompt = _promptGenerator.GetPart4AudioPrompt(inputData, previousAudioScript);
+                var audioPrompt = _promptGenerator.GetPart4AudioPrompt(inputData, previousAudioScript, vocabulary.KeyWord, grammar.Name);
                 List<string> purposes = new() { GenerationPurpose.AUDIO };
 
                 AiGenerateResponseDto audio = await GenerateWithRetryAsync(purposes, audioPrompt, quizSetId);
@@ -628,7 +674,11 @@ namespace BusinessLogic.Services
                 string previousQuizText = string.Empty;
                 for (int j = 0; j < 3 && i + j < inputData.QuestionQuantity; j++)
                 {
-                    var quizPrompt = _promptGenerator.GetPart4QuizPrompt(audio.AudioScript, previousQuizText);
+                    var quizPrompt = _promptGenerator.GetPart4QuizPrompt(
+                        audio.AudioScript, 
+                        previousQuizText, 
+                        vocabulary.KeyWord, 
+                        grammar.Name);
                     List<string> quizPurposes = new() { GenerationPurpose.QUIZ };
 
                     AiGenerateResponseDto quiz = await GenerateWithRetryAsync(quizPurposes, quizPrompt, quizSetId);
@@ -636,6 +686,8 @@ namespace BusinessLogic.Services
                     previousQuizText += quiz.QuestionText + ", ";
 
                     var createdQuiz = await CreateQuizWithOptionsAsync(quizSetId
+                        , grammar.Id
+                        , vocabulary.Id
                         , QuizPartEnum.PART4.ToString()
                         , quiz.QuestionText
                         , quiz.AnswerOptions
@@ -647,16 +699,25 @@ namespace BusinessLogic.Services
         
         public async Task<bool> GeneratePracticeQuizSetPart5Async(AiGenerateQuizSetRequestDto inputData, Guid quizSetId)
         {
+            // Fetch Grammar and Vocabulary objects using their IDs
+            var grammar = await _grammarService.GetByIdAsync(inputData.GrammarId);
+            var vocabulary = await _vocabularyService.GetByIdAsync(inputData.VocabularyId);
+
+            if (grammar == null || vocabulary == null)
+                throw new ArgumentException("Grammar or Vocabulary not found");
+
             string previousQuestionText = string.Empty;
 
             for (int i = 0; i < inputData.QuestionQuantity; i++)
             {
-                var prompt = _promptGenerator.GetPart5Prompt(inputData, previousQuestionText);
+                var prompt = _promptGenerator.GetPart5Prompt(inputData, previousQuestionText, vocabulary.KeyWord, grammar.Name);
                 List<string> purposes = new() { GenerationPurpose.QUIZ };
 
                 AiGenerateResponseDto quiz = await GenerateWithRetryAsync(purposes, prompt, quizSetId);
 
                 var createdQuiz = await CreateQuizWithOptionsAsync(quizSetId
+                    , grammar.Id
+                    , vocabulary.Id
                     , QuizPartEnum.PART5.ToString()
                     , quiz.QuestionText
                     , quiz.AnswerOptions);
@@ -668,11 +729,18 @@ namespace BusinessLogic.Services
         
         public async Task<bool> GeneratePracticeQuizSetPart6Async(AiGenerateQuizSetRequestDto inputData, Guid quizSetId)
         {
+            // Fetch Grammar and Vocabulary objects using their IDs
+            var grammar = await _grammarService.GetByIdAsync(inputData.GrammarId);
+            var vocabulary = await _vocabularyService.GetByIdAsync(inputData.VocabularyId);
+
+            if (grammar == null || vocabulary == null)
+                throw new ArgumentException("Grammar or Vocabulary not found");
+
             string previousPassages = string.Empty;
 
             for (int i = 0; i < inputData.QuestionQuantity; i += 4)
             {
-                var passagePrompt = _promptGenerator.GetPart6PassagePrompt(inputData, previousPassages);
+                var passagePrompt = _promptGenerator.GetPart6PassagePrompt(inputData, previousPassages, vocabulary.KeyWord, grammar.Name);
                 List<string> purposes = new() { GenerationPurpose.PASSAGE };
 
                 AiGenerateResponseDto passageResult = await GenerateWithRetryAsync(purposes, passagePrompt, quizSetId);
@@ -692,7 +760,12 @@ namespace BusinessLogic.Services
 
                 for (int j = 1; j <= 4 && i + j <= inputData.QuestionQuantity; j++)
                 {
-                    var quizPrompt = _promptGenerator.GetPart6QuizPrompt(passageResult.Passage, j, usedBlanks);
+                    var quizPrompt = _promptGenerator.GetPart6QuizPrompt(
+                        passageResult.Passage, 
+                        j, 
+                        usedBlanks,
+                        vocabulary.KeyWord,
+                        grammar.Name);
                     List<string> quizPurposes = new() { GenerationPurpose.QUIZ };
                     
                     AiGenerateResponseDto quiz = await GenerateWithRetryAsync(quizPurposes, quizPrompt, quizSetId);
@@ -739,11 +812,18 @@ namespace BusinessLogic.Services
         
         public async Task<bool> GeneratePracticeQuizSetPart7Async(AiGenerateQuizSetRequestDto inputData, Guid quizSetId)
         {
+            // Fetch Grammar and Vocabulary objects using their IDs
+            var grammar = await _grammarService.GetByIdAsync(inputData.GrammarId);
+            var vocabulary = await _vocabularyService.GetByIdAsync(inputData.VocabularyId);
+
+            if (grammar == null || vocabulary == null)
+                throw new ArgumentException("Grammar or Vocabulary not found");
+
             string previousPassages = string.Empty;
 
             for (int i = 0; i < inputData.QuestionQuantity; i += 3)
             {
-                var passagePrompt = _promptGenerator.GetPart7PassagePrompt(inputData, previousPassages);
+                var passagePrompt = _promptGenerator.GetPart7PassagePrompt(inputData, previousPassages, vocabulary.KeyWord, grammar.Name);
                 List<string> purposes = new() { GenerationPurpose.PASSAGE };
                 
                 AiGenerateResponseDto passageResult = await GenerateWithRetryAsync(purposes, passagePrompt, quizSetId);
@@ -762,7 +842,11 @@ namespace BusinessLogic.Services
                 string previousQuizText = string.Empty;
                 for (int j = 1; j <= 3 && i + j <= inputData.QuestionQuantity; j++)
                 {
-                    var quizPrompt = _promptGenerator.GetPart7QuizPrompt(passageResult.Passage, previousQuizText);
+                    var quizPrompt = _promptGenerator.GetPart7QuizPrompt(
+                        passageResult.Passage, 
+                        previousQuizText,
+                        vocabulary.KeyWord,
+                        grammar.Name);
                     List<string> quizPurposes = new() { GenerationPurpose.QUIZ };
 
                     AiGenerateResponseDto quiz = await GenerateWithRetryAsync(quizPurposes, quizPrompt, quizSetId);
@@ -770,6 +854,8 @@ namespace BusinessLogic.Services
                     previousQuizText += quiz.QuestionText + ", ";
 
                     var createdQuiz = await CreateQuizWithOptionsAsync(quizSetId
+                        , grammar.Id
+                        , vocabulary.Id
                         , QuizPartEnum.PART7.ToString()
                         , quiz.QuestionText
                         , quiz.AnswerOptions
