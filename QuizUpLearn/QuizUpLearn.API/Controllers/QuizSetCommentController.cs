@@ -22,11 +22,13 @@ namespace QuizUpLearn.API.Controllers
         }
 
         [HttpPost]
+        [SubscriptionAndRoleAuthorize]
         public async Task<ActionResult<ResponseQuizSetCommentDto>> Create([FromBody] RequestQuizSetCommentDto dto)
         {
-            if (!ModelState.IsValid)
-                throw new HttpException(HttpStatusCode.BadRequest, "Invalid model state");
-
+            if (dto.UserId == Guid.Empty)
+            {
+                dto.UserId = (Guid)HttpContext.Items["UserId"]!;
+            }
             try
             {
                 var result = await _quizSetCommentService.CreateAsync(dto);
