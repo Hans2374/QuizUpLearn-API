@@ -491,22 +491,37 @@ namespace BusinessLogic.Services
             if (leavingPlayer == null)
                 return false;
 
-            // Player1 (Host) leave → Cancel room (áp dụng cho cả 1vs1 và Multiplayer)
+            // Player1 (Host) leave → Cancel room (NHƯNG không cancel nếu game đã kết thúc - để players xem kết quả)
             if (room.Player1?.ConnectionId == connectionId)
             {
-                room.Status = OneVsOneRoomStatus.Cancelled;
-                // Xóa connection mapping khi host rời
-                await DeleteConnectionMappingAsync(connectionId);
-                var gameMode = room.Mode == GameModeEnum.OneVsOne ? "1vs1" : "Multiplayer";
-                _logger.LogInformation($"🚨 Host left {gameMode} room {roomPin} - Room cancelled (affects all {room.Players.Count} players)");
+                // Nếu game đã kết thúc (Completed), không cancel - chỉ remove host khỏi players list
+                if (room.Status == OneVsOneRoomStatus.Completed)
+                {
+                    room.Players.Remove(leavingPlayer);
+                    await DeleteConnectionMappingAsync(connectionId);
+                    var gameMode = room.Mode == GameModeEnum.OneVsOne ? "1vs1" : "Multiplayer";
+                    _logger.LogInformation($"✅ Host left {gameMode} room {roomPin} after game completed - Players can still view results ({room.Players.Count} players remaining)");
+                }
+                else
+                {
+                    // Game chưa kết thúc → Cancel room
+                    room.Status = OneVsOneRoomStatus.Cancelled;
+                    await DeleteConnectionMappingAsync(connectionId);
+                    var gameMode = room.Mode == GameModeEnum.OneVsOne ? "1vs1" : "Multiplayer";
+                    _logger.LogInformation($"🚨 Host left {gameMode} room {roomPin} - Room cancelled (affects all {room.Players.Count} players)");
+                }
             }
             else
             {
                 // Other players leave → Remove from list
                 room.Players.Remove(leavingPlayer);
                 
-                // Update status
-                if (room.Players.Count < 2)
+                // Update status (chỉ set Waiting nếu game chưa bắt đầu, không set nếu game đang chạy)
+                var isGameActive = room.Status == OneVsOneRoomStatus.InProgress || 
+                                 room.Status == OneVsOneRoomStatus.ShowingResult ||
+                                 room.Status == OneVsOneRoomStatus.Ready;
+                
+                if (room.Players.Count < 2 && !isGameActive)
                 {
                     room.Status = OneVsOneRoomStatus.Waiting;
                 }
@@ -520,7 +535,7 @@ namespace BusinessLogic.Services
                 // ✨ Xóa connection mapping để player có thể join lại với connectionId mới
                 await DeleteConnectionMappingAsync(connectionId);
 
-                _logger.LogInformation($"Player '{leavingPlayer.PlayerName}' left room {roomPin} ({room.Players.Count} players remaining)");
+                _logger.LogInformation($"Player '{leavingPlayer.PlayerName}' left room {roomPin} ({room.Players.Count} players remaining, Status: {room.Status})");
             }
 
             await SaveRoomToRedisAsync(roomPin, room);
@@ -715,8 +730,15 @@ namespace BusinessLogic.Services
                 }
             }
 
-            // Players chưa submit sẽ KHÔNG có trong kết quả
-            var playerResults = room.CurrentAnswers.Values
+            // Chỉ lấy answers từ players còn lại (tránh hiển thị answers của players đã rời)
+            var remainingPlayerConnectionIds = room.Players
+                .Where(p => !string.IsNullOrEmpty(p.ConnectionId))
+                .Select(p => p.ConnectionId)
+                .ToHashSet();
+            
+            var playerResults = room.CurrentAnswers
+                .Where(kvp => remainingPlayerConnectionIds.Contains(kvp.Key))
+                .Select(kvp => kvp.Value)
                 .OrderByDescending(a => a.PointsEarned)
                 .ThenBy(a => a.TimeSpent)
                 .Select(a => new OneVsOnePlayerResult
