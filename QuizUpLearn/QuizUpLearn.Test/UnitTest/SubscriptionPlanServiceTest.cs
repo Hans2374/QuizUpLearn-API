@@ -506,6 +506,24 @@ namespace QuizUpLearn.Test.UnitTest
         }
 
         [Fact]
+        public async Task GetFreeSubscriptionPlanAsync_WhenRepositoryFails_ShouldThrowException()
+        {
+            // Arrange
+            _mockRepo.Setup(r => r.GetFreeSubscriptionPlan())
+                .ThrowsAsync(new InvalidOperationException("Failed to create or retrieve free subscription plan"));
+
+            // Act
+            Func<Task> act = async () => await _subscriptionPlanService.GetFreeSubscriptionPlanAsync();
+
+            // Assert
+            await act.Should().ThrowAsync<InvalidOperationException>()
+                .WithMessage("Failed to create or retrieve free subscription plan");
+
+            _mockRepo.Verify(r => r.GetFreeSubscriptionPlan(), Times.Once);
+            _mockMapper.Verify(m => m.Map<ResponseSubscriptionPlanDto>(It.IsAny<SubscriptionPlan>()), Times.Never);
+        }
+
+        [Fact]
         public async Task GetAllAsync_WithInvalidPagination_ShouldThrowArgumentException()
         {
             // Arrange

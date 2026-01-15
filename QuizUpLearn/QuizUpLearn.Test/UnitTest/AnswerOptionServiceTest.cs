@@ -71,6 +71,30 @@ namespace QuizUpLearn.Test.UnitTest
         }
 
         [Fact]
+        public async Task CreateAsync_WithEmptyQuizId_ShouldReturnArgumentException()
+        {
+            // Arrange
+            var request = new RequestAnswerOptionDto
+            {
+                QuizId = Guid.Empty,
+                OptionLabel = "A",
+                OptionText = "Sample answer option",
+                OrderIndex = 1,
+                IsCorrect = true
+            };
+
+            // Act & Assert
+            var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+                _answerOptionService.CreateAnswerOptionAsync(request));
+
+            exception.Should().NotBeNull();
+            exception.Message.Should().Contain("QuizId");
+
+            // Verify that repository was never called since validation should fail early
+            _mockAnswerOptionRepo.Verify(r => r.CreateAsync(It.IsAny<AnswerOption>()), Times.Never);
+        }
+
+        [Fact]
         public async Task GetByIdAsync_WithValidId_ShouldReturnAnswerOptionResponse()
         {
             // Arrange
@@ -387,6 +411,22 @@ namespace QuizUpLearn.Test.UnitTest
             result.Should().BeTrue();
             answerOption.Should().BeNull();
             _mockAnswerOptionRepo.Verify(r => r.DeleteAsync(answerOptionId), Times.Once);
+        }
+        [Fact]
+        public async Task DeleteAsync_EmptyId_ShouldThrowArgumentException()
+        {
+            // Arrange
+            var answerOptionId = Guid.Empty;
+
+            // Act & Assert
+            var exception = await Assert.ThrowsAsync<ArgumentException>(() =>
+                _answerOptionService.DeleteAnswerOptionAsync(answerOptionId));
+
+            exception.Should().NotBeNull();
+            exception.Message.Should().Contain("Id");
+
+            // Verify that repository was never called since validation should fail early
+            _mockAnswerOptionRepo.Verify(r => r.DeleteAsync(It.IsAny<Guid>()), Times.Never);
         }
     }
 }
