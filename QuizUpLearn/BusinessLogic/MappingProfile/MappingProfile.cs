@@ -26,9 +26,11 @@ namespace BusinessLogic.MappingProfile
             // User Mappings
             CreateMap<Repository.Entities.User, DTOs.ResponseUserDto>();
             CreateMap<Repository.Entities.User, DTOs.RequestUserDto>().ReverseMap();
+            CreateMap<Repository.Entities.User, DTOs.UserReportDtos.ResponseUserLiteDto>();
             
             // Quiz Attempt Mappings
-            CreateMap<Repository.Entities.QuizAttempt, DTOs.ResponseQuizAttemptDto>();
+            CreateMap<Repository.Entities.QuizAttempt, DTOs.ResponseQuizAttemptDto>()
+                .ForMember(dest => dest.QuizSetName, opt => opt.MapFrom(src => src.QuizSet != null ? src.QuizSet.Title : null));
             CreateMap<Repository.Entities.QuizAttempt, DTOs.RequestQuizAttemptDto>().ReverseMap();
             
             // Quiz Attempt Detail Mappings
