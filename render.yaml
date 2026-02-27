@@ -4,7 +4,7 @@ services:
     runtime: docker
     region: singapore
     dockerfilePath: ./QuizUpLearn/dockerfile
-    dockerContext: .
+    dockerContext: ./QuizUpLearn
     plan: free
     envVars:
       - key: ASPNETCORE_ENVIRONMENT

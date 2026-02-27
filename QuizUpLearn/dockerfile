@@ -1,12 +1,12 @@
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-COPY ["QuizUpLearn/QuizUpLearn.API/QuizUpLearn.API.csproj", "QuizUpLearn.API/"]
-COPY ["QuizUpLearn/BusinessLogic/BusinessLogic.csproj", "BusinessLogic/"]
-COPY ["QuizUpLearn/Repository/Repository.csproj", "Repository/"]
+COPY ["QuizUpLearn.API/QuizUpLearn.API.csproj", "QuizUpLearn.API/"]
+COPY ["BusinessLogic/BusinessLogic.csproj", "BusinessLogic/"]
+COPY ["Repository/Repository.csproj", "Repository/"]
 RUN dotnet restore "QuizUpLearn.API/QuizUpLearn.API.csproj"
 
-COPY QuizUpLearn/ .
+COPY . .
 
 WORKDIR "/src/QuizUpLearn.API"
 RUN dotnet publish -c Release -o /app/publish
