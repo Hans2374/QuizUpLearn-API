@@ -3,6 +3,10 @@
 **/*-firebase-adminsdk-*.json
 **/firebase-adminsdk-*.json
 
+# Environment variables
+.env
+*.env
+.env.*
 # Build results
 [Dd]ebug/
 [Dd]ebugPublic/

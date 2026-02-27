@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: quizuplearn-api
+    runtime: docker
+    region: singapore
+    dockerfilePath: ./QuizUpLearn/dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
