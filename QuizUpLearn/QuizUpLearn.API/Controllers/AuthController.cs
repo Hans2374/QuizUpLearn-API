@@ -12,11 +12,13 @@ namespace QuizUpLearn.API.Controllers
     {
         private readonly IIdentityService _identityService;
         private readonly IAccountService _accountService;
+        private readonly ILogger<AuthController> _logger;
 
-        public AuthController(IIdentityService identityService, IAccountService accountService)
+        public AuthController(IIdentityService identityService, IAccountService accountService, ILogger<AuthController> logger)
         {
             _identityService = identityService;
             _accountService = accountService;
+            _logger = logger;
         }
 
         [HttpPost("register")]
@@ -41,9 +43,17 @@ namespace QuizUpLearn.API.Controllers
             var refreshToken = _identityService.GenerateRefreshToken();
             login.RefreshToken = refreshToken;
             login.RefreshExpiresAt = TimeZoneHelper.ConvertToVietnamTime(DateTime.UtcNow.AddDays(30));
-            
-            await _identityService.SaveRefreshTokenAsync(login.Account.Id, refreshToken);
-            
+
+            try
+            {
+                await _identityService.SaveRefreshTokenAsync(login.Account.Id, refreshToken);
+            }
+            catch (Exception ex)
+            {
+                // Don't fail login if Redis is down — access token still works.
+                _logger.LogWarning(ex, "Failed to persist refresh token for account {AccountId}; login still succeeded.", login.Account.Id);
+            }
+
             return Ok(login);
         }
 
@@ -61,9 +71,16 @@ namespace QuizUpLearn.API.Controllers
             var refreshToken = _identityService.GenerateRefreshToken();
             login.RefreshToken = refreshToken;
             login.RefreshExpiresAt = TimeZoneHelper.ConvertToVietnamTime(DateTime.UtcNow.AddDays(30));
-            
-            await _identityService.SaveRefreshTokenAsync(login.Account.Id, refreshToken);
-            
+
+            try
+            {
+                await _identityService.SaveRefreshTokenAsync(login.Account.Id, refreshToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to persist refresh token for account {AccountId}; login still succeeded.", login.Account.Id);
+            }
+
             return Ok(login);
         }
 

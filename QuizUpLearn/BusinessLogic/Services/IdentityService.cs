@@ -13,6 +13,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Logging;
 
 namespace BusinessLogic.Services
 {
@@ -27,6 +28,7 @@ namespace BusinessLogic.Services
         private readonly ISubscriptionService _subscriptionService;
         private readonly ISubscriptionPlanService _subscriptionPlanService;
         private readonly IDistributedCache _cache;
+        private readonly ILogger<IdentityService> _logger;
 
         public IdentityService(
             IAccountRepo accountRepo,
@@ -37,7 +39,8 @@ namespace BusinessLogic.Services
             IMapper mapper,
             ISubscriptionService subscriptionService,
             ISubscriptionPlanService subscriptionPlanService,
-            IDistributedCache cache)
+            IDistributedCache cache,
+            ILogger<IdentityService> logger)
         {
             _accountRepo = accountRepo;
             _userRepo = userRepo;
@@ -48,6 +51,7 @@ namespace BusinessLogic.Services
             _subscriptionService = subscriptionService;
             _subscriptionPlanService = subscriptionPlanService;
             _cache = cache;
+            _logger = logger;
         }
 
         public async Task<LoginResponseDto?> LoginAsync(LoginRequestDto dto)
@@ -152,6 +156,7 @@ namespace BusinessLogic.Services
         {
             try
             {
+                _logger.LogInformation("LoginWithGoogle: starting");
                 // Verify Firebase ID token với Firebase Admin SDK
                 FirebaseToken decodedToken;
                 try
@@ -162,38 +167,35 @@ namespace BusinessLogic.Services
                     // - Audience (phải là projectId)
                     // - Expiration time
                     decodedToken = await FirebaseAuth.DefaultInstance.VerifyIdTokenAsync(dto.IdToken);
+                    _logger.LogInformation("LoginWithGoogle: Firebase token verified");
                 }
                 catch (FirebaseAuthException ex)
                 {
                     // Token không hợp lệ, đã hết hạn, hoặc không khớp projectId
-                    // Có thể do:
-                    // 1. Token đã hết hạn
-                    // 2. Audience không khớp (projectId sai)
-                    // 3. Signature không hợp lệ
-                    // 4. Token không phải là Firebase ID token
-                    System.Diagnostics.Debug.WriteLine($"Firebase token verification failed: {ex.Message}");
+                    _logger.LogWarning(ex, "Firebase token verification failed");
                     return null;
                 }
                 catch (Exception ex)
                 {
                     // Lỗi khác khi verify token (có thể do Firebase chưa được khởi tạo)
-                    System.Diagnostics.Debug.WriteLine($"Firebase token verification error: {ex.Message}");
+                    _logger.LogError(ex, "Firebase token verification error");
                     return null;
                 }
-                
+
                 // Lấy email từ decoded token
                 var email = decodedToken.Claims.GetValueOrDefault("email")?.ToString();
                 if (string.IsNullOrEmpty(email))
                 {
                     return null;
                 }
-                
+
                 // Lấy thông tin khác từ token
                 var name = decodedToken.Claims.GetValueOrDefault("name")?.ToString();
                 var picture = decodedToken.Claims.GetValueOrDefault("picture")?.ToString();
 
                 email = email.Trim().ToLowerInvariant();
                 var account = await _accountRepo.GetByEmailAsync(email);
+                _logger.LogInformation("LoginWithGoogle: account lookup done. Exists={Exists}", account != null);
 
                 // Nếu account chưa tồn tại, tạo mới
                 if (account == null)
@@ -205,15 +207,27 @@ namespace BusinessLogic.Services
                         PasswordHash = BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString())
                     };
                     account = await _accountRepo.CreateAsync(newAccount);
+                    _logger.LogInformation("LoginWithGoogle: new account created {AccountId}", account.Id);
 
                     // Tạo subscription miễn phí cho user mới
-                    var freePlan = await _subscriptionPlanService.GetFreeSubscriptionPlanAsync();
-                    await _subscriptionService.CreateAsync(new RequestSubscriptionDto
+                    try
                     {
-                        UserId = account.UserId,
-                        SubscriptionPlanId = freePlan.Id,
-                        EndDate = DateTime.UtcNow.AddDays(freePlan.DurationDays)
-                    });
+                        var freePlan = await _subscriptionPlanService.GetFreeSubscriptionPlanAsync();
+                        await _subscriptionService.CreateAsync(new RequestSubscriptionDto
+                        {
+                            UserId = account.UserId,
+                            SubscriptionPlanId = freePlan.Id,
+                            EndDate = DateTime.UtcNow.AddDays(freePlan.DurationDays)
+                        });
+                        _logger.LogInformation("LoginWithGoogle: free subscription created");
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "LoginWithGoogle: failed to create free subscription for new account {AccountId}", account.Id);
+                        // Roll back the account so the user can retry
+                        await _accountRepo.SoftDeleteAsync(account.Id);
+                        throw;
+                    }
 
                     // Cập nhật thông tin User từ Google
                     var user = await _userRepo.GetByIdAsync(account.UserId);
@@ -242,18 +256,18 @@ namespace BusinessLogic.Services
                             user.FullName = name;
                             updated = true;
                         }
-                        
+
                         // Chỉ cập nhật avatar từ Google nếu:
                         // 1. User chưa có avatar (rỗng)
                         // 2. Hoặc avatar hiện tại là Google avatar (chứa googleusercontent.com)
                         // → Không ghi đè avatar custom của user
                         if (!string.IsNullOrEmpty(picture))
                         {
-                            var isGoogleAvatar = !string.IsNullOrEmpty(user.AvatarUrl) && 
-                                                (user.AvatarUrl.Contains("googleusercontent.com") || 
+                            var isGoogleAvatar = !string.IsNullOrEmpty(user.AvatarUrl) &&
+                                                (user.AvatarUrl.Contains("googleusercontent.com") ||
                                                  user.AvatarUrl.Contains("googleapis.com"));
                             var isEmptyAvatar = string.IsNullOrEmpty(user.AvatarUrl) || user.AvatarUrl == string.Empty;
-                            
+
                             if (isEmptyAvatar || isGoogleAvatar)
                             {
                                 if (user.AvatarUrl != picture)
@@ -264,7 +278,7 @@ namespace BusinessLogic.Services
                             }
                             // Nếu user đã có avatar custom (không phải Google), giữ nguyên
                         }
-                        
+
                         if (updated)
                         {
                             await _userRepo.UpdateAsync(user.Id, user);
@@ -276,14 +290,19 @@ namespace BusinessLogic.Services
                 account.LastLoginAt = DateTime.UtcNow;
                 account.IsEmailVerified = true; // Google email đã được verify
                 await _accountRepo.UpdateAsync(account.Id, account);
+                _logger.LogInformation("LoginWithGoogle: last login updated");
 
                 // Reload account với User và Role để map đúng
                 account = await _accountRepo.GetByEmailAsync(email);
                 if (account == null) return null;
 
+                _logger.LogInformation("LoginWithGoogle: starting AutoMapper.Map to ResponseAccountDto");
+                var mapped = _mapper.Map<ResponseAccountDto>(account);
+                _logger.LogInformation("LoginWithGoogle: AutoMapper.Map completed successfully");
+
                 return new LoginResponseDto
                 {
-                    Account = _mapper.Map<ResponseAccountDto>(account),
+                    Account = mapped,
                     AccessToken = string.Empty,
                     ExpiresAt = DateTime.UtcNow,
                     RefreshToken = string.Empty,
@@ -302,8 +321,7 @@ namespace BusinessLogic.Services
             }
             catch (Exception ex)
             {
-                // Lỗi khác
-                System.Diagnostics.Debug.WriteLine($"Unexpected error in LoginWithGoogleAsync: {ex.Message}");
+                _logger.LogError(ex, "Unexpected error in LoginWithGoogleAsync");
                 return null;
             }
         }
