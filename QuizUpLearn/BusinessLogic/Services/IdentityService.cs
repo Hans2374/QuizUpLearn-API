@@ -396,20 +396,42 @@ namespace BusinessLogic.Services
             {
                 AbsoluteExpirationRelativeToNow = TimeSpan.FromDays(30)
             };
-            await _cache.SetStringAsync(key, "1", options);
+            try
+            {
+                await _cache.SetStringAsync(key, "1", options);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "SaveRefreshTokenAsync: Redis unavailable, refresh token not persisted for account {AccountId}", accountId);
+            }
         }
 
         public async Task<bool> ValidateRefreshTokenAsync(Guid accountId, string refreshToken)
         {
             var key = $"refresh:{accountId}:{refreshToken}";
-            var value = await _cache.GetStringAsync(key);
-            return !string.IsNullOrEmpty(value);
+            try
+            {
+                var value = await _cache.GetStringAsync(key);
+                return !string.IsNullOrEmpty(value);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "ValidateRefreshTokenAsync: Redis unavailable, treating refresh token as invalid for account {AccountId}", accountId);
+                return false;
+            }
         }
 
         public async Task DeleteRefreshTokenAsync(Guid accountId, string refreshToken)
         {
             var key = $"refresh:{accountId}:{refreshToken}";
-            await _cache.RemoveAsync(key);
+            try
+            {
+                await _cache.RemoveAsync(key);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "DeleteRefreshTokenAsync: Redis unavailable, refresh token not deleted for account {AccountId}", accountId);
+            }
         }
     }
 }
